@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Bai Jamjuree", system-ui, sans-serif;
+
+  --color-cream: #fff8ec;
+  --color-cream-soft: #fbeed9;
+  --color-ink: #4a2e1f;
+  --color-ink-soft: #7a5a41;
+
+  --color-brown-50: #f6ede3;
+  --color-brown-100: #e6cfb2;
+  --color-brown-300: #c48a4a;
+  --color-brown-500: #8b5e34;
+  --color-brown-600: #6b4226;
+  --color-brown-700: #5a371f;
+  --color-brown-900: #3b2415;
+
+  --color-gold-300: #ffe8a3;
+  --color-gold-400: #f4b942;
+  --color-gold-500: #e8a33d;
+  --color-gold-600: #cf8a25;
+
+  --shadow-soft: 0 10px 30px -12px rgba(74, 46, 31, 0.35);
+  --shadow-pop: 0 6px 16px -6px rgba(74, 46, 31, 0.25);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brown-300) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-brown-300);
+  border-radius: 999px;
+}
+
+/* Native <button> elements default to cursor:default, not pointer — fix that
+   for every interactive control app-wide (skip disabled ones). */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"] {
+  cursor: pointer;
+}
