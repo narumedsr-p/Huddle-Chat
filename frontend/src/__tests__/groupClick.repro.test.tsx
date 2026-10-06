@@ -1,14 +1,24 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "../components/AppShell";
 import { JoinScreen } from "../components/JoinScreen";
 import { ChatStoreProvider, useChatStore } from "../state/useChatStore";
+import { fakeApi } from "./fakeApi";
+
+vi.mock("../api", async () => {
+  const mod = await import("./fakeApi");
+  return { api: mod.fakeApi, ApiError: mod.FakeApiError };
+});
 
 // jsdom doesn't implement scrollIntoView (every real browser does) — stub it
 // so MessageWindow's auto-scroll effect doesn't throw in tests.
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
+});
+
+beforeEach(() => {
+  fakeApi.__reset();
 });
 
 function Root() {
@@ -24,28 +34,37 @@ function renderApp() {
   );
 }
 
-function join(name: string) {
+/** Joins and waits for the post-login clients roster (fetched from the fake
+ * API) to land, so later synchronous `getByText("Nara")`-style lookups don't
+ * race the initial poll. */
+async function join(name: string) {
   fireEvent.change(screen.getByPlaceholderText("Your display name"), {
     target: { value: name },
   });
   fireEvent.click(screen.getByText("Join chat"));
+  await screen.findByText("Nara");
 }
 
 /** Clicking a Discover row opens a member-list modal with a "Join Group"
- * button at the bottom; joining closes the modal automatically. */
-function joinGroupFromDiscover(groupName: string) {
-  fireEvent.click(screen.getByText(groupName, { exact: false }));
+ * button at the bottom; joining closes the modal automatically. Waits for
+ * the group roster poll first, and for the membership change to land after
+ * clicking Join (both now real async calls against the fake API). */
+async function joinGroupFromDiscover(groupName: string) {
+  const row = await screen.findByText(groupName, { exact: false });
+  fireEvent.click(row);
   fireEvent.click(screen.getByRole("button", { name: "Join Group" }));
+  await screen.findByText("My Groups (1)");
 }
 
 describe("clicking a group row right after switching to the Groups tab", () => {
-  it("opens the members popup on the very first click, no animation wait needed", () => {
+  it("opens the members popup on the very first click, no animation wait needed", async () => {
     renderApp();
-    join("TestUser");
+    await join("TestUser");
 
     fireEvent.click(screen.getByText("Groups"));
+    const row = await screen.findByText("Monkey Business", { exact: false });
     // Deliberately NOT waiting for any animation/timers here — mimics a fast click.
-    fireEvent.click(screen.getByText("Monkey Business", { exact: false }));
+    fireEvent.click(row);
 
     expect(
       screen.getByRole("dialog", { name: /Monkey Business \(\d+\)/ }),
@@ -54,7 +73,7 @@ describe("clicking a group row right after switching to the Groups tab", () => {
 
   it("confirms the group row shows up later, once the exit animation settles", async () => {
     renderApp();
-    join("TestUser2");
+    await join("TestUser2");
 
     fireEvent.click(screen.getByText("Groups"));
     // This waits (via findBy's built-in polling) instead of asserting instantly.
@@ -64,9 +83,9 @@ describe("clicking a group row right after switching to the Groups tab", () => {
 });
 
 describe("switching the active chat room right after clicking another user", () => {
-  it("shows the new room's message box on the very first click", () => {
+  it("shows the new room's message box on the very first click", async () => {
     renderApp();
-    join("TestUser3");
+    await join("TestUser3");
 
     fireEvent.click(screen.getByText("Nara"));
     fireEvent.click(screen.getByText("Ploy"));
@@ -76,9 +95,9 @@ describe("switching the active chat room right after clicking another user", () 
 });
 
 describe("switching from a private chat to a group chat", () => {
-  it("does not carry over an unsent draft or stale content from the private room", () => {
+  it("does not carry over an unsent draft or stale content from the private room", async () => {
     renderApp();
-    join("TestUser4");
+    await join("TestUser4");
 
     // Open a private room and type a draft without sending it.
     fireEvent.click(screen.getByText("Nara"));
@@ -88,7 +107,7 @@ describe("switching from a private chat to a group chat", () => {
 
     // Join a group (doesn't navigate in) then open it explicitly from My Groups.
     fireEvent.click(screen.getByText("Groups"));
-    joinGroupFromDiscover("Monkey Business");
+    await joinGroupFromDiscover("Monkey Business");
     fireEvent.click(screen.getByText("Monkey Business", { exact: false }));
 
     const groupInput = screen.getByPlaceholderText(
@@ -99,9 +118,9 @@ describe("switching from a private chat to a group chat", () => {
 });
 
 describe("the top tab strip for an open room", () => {
-  it("shows a tab for an open private chat", () => {
+  it("shows a tab for an open private chat", async () => {
     renderApp();
-    join("TabTestUser1");
+    await join("TabTestUser1");
 
     fireEvent.click(screen.getByText("Nara"));
 
@@ -109,12 +128,12 @@ describe("the top tab strip for an open room", () => {
     expect(screen.getAllByText("Nara").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("shows a tab for an open group chat the same way", () => {
+  it("shows a tab for an open group chat the same way", async () => {
     renderApp();
-    join("TabTestUser2");
+    await join("TabTestUser2");
 
     fireEvent.click(screen.getByText("Groups"));
-    joinGroupFromDiscover("Monkey Business");
+    await joinGroupFromDiscover("Monkey Business");
     // Joining only grants membership — open it explicitly from My Groups.
     fireEvent.click(screen.getByText("Monkey Business", { exact: false }));
 
@@ -122,12 +141,12 @@ describe("the top tab strip for an open room", () => {
     expect(screen.getAllByText("Monkey Business").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("still shows the group tab after leaving Groups mode and reopening from My Groups", () => {
+  it("still shows the group tab after leaving Groups mode and reopening from My Groups", async () => {
     renderApp();
-    join("TabTestUser3");
+    await join("TabTestUser3");
 
     fireEvent.click(screen.getByText("Groups"));
-    joinGroupFromDiscover("Monkey Business");
+    await joinGroupFromDiscover("Monkey Business");
 
     // Switch away to Users and back to Groups, then reopen straight from My Groups
     // (joined groups open on a single click now, no separate "Open chat" button).
@@ -140,12 +159,12 @@ describe("the top tab strip for an open room", () => {
 });
 
 describe("joining a group", () => {
-  it("does not open the room automatically", () => {
+  it("does not open the room automatically", async () => {
     renderApp();
-    join("JoinNoOpenUser");
+    await join("JoinNoOpenUser");
 
     fireEvent.click(screen.getByText("Groups"));
-    joinGroupFromDiscover("Monkey Business");
+    await joinGroupFromDiscover("Monkey Business");
 
     // The modal should be gone, and only the sidebar's "My Groups" row shows
     // it — no top tab, no chat header.
@@ -156,12 +175,12 @@ describe("joining a group", () => {
 });
 
 describe("leaving a group", () => {
-  it("asks for confirmation, then removes the room and drops you back to the empty state", () => {
+  it("asks for confirmation, then removes the room and drops you back to the empty state", async () => {
     renderApp();
-    join("LeaveGroupUser");
+    await join("LeaveGroupUser");
 
     fireEvent.click(screen.getByText("Groups"));
-    joinGroupFromDiscover("Monkey Business");
+    await joinGroupFromDiscover("Monkey Business");
     fireEvent.click(screen.getByText("Monkey Business", { exact: false }));
 
     fireEvent.click(screen.getByLabelText("Leave group"));
@@ -182,12 +201,12 @@ describe("leaving a group", () => {
 });
 
 describe("viewing group members", () => {
-  it("opens a modal listing the member names", () => {
+  it("opens a modal listing the member names", async () => {
     renderApp();
-    join("MembersModalUser");
+    await join("MembersModalUser");
 
     fireEvent.click(screen.getByText("Groups"));
-    joinGroupFromDiscover("Monkey Business");
+    await joinGroupFromDiscover("Monkey Business");
     fireEvent.click(screen.getByText("Monkey Business", { exact: false }));
 
     fireEvent.click(screen.getByLabelText("View members"));
@@ -202,9 +221,9 @@ describe("viewing group members", () => {
 });
 
 describe("logging out", () => {
-  it("asks for confirmation before returning to the join screen", () => {
+  it("asks for confirmation before returning to the join screen", async () => {
     renderApp();
-    join("LogoutConfirmUser");
+    await join("LogoutConfirmUser");
 
     fireEvent.click(screen.getByLabelText("Log out"));
     expect(screen.getByText("Log out?")).toBeInTheDocument();
@@ -219,9 +238,9 @@ describe("logging out", () => {
     expect(screen.getByPlaceholderText("Your display name")).toBeInTheDocument();
   });
 
-  it("portals the confirm modal outside the blurred sidebar so it centers on the whole page", () => {
+  it("portals the confirm modal outside the blurred sidebar so it centers on the whole page", async () => {
     renderApp();
-    join("PortalCheckUser");
+    await join("PortalCheckUser");
 
     fireEvent.click(screen.getByLabelText("Log out"));
     const dialog = screen.getByRole("dialog", { name: "Log out?" });
@@ -239,7 +258,7 @@ describe("logging out", () => {
 describe("the shared Modal primitive", () => {
   it("has a visible X close button", async () => {
     renderApp();
-    join("ModalCloseUser");
+    await join("ModalCloseUser");
 
     fireEvent.click(screen.getByLabelText("Log out"));
     fireEvent.click(screen.getByLabelText("Close"));
@@ -253,52 +272,52 @@ describe("the shared Modal primitive", () => {
 });
 
 describe("unread badge on My Groups", () => {
-  it("increments while the room isn't active, then clears once you open it", async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    "increments while the room isn't active, then clears once you open it",
+    async () => {
       renderApp();
-      join("UnreadBadgeUser");
+      await join("UnreadBadgeUser");
 
-      // Join the group but don't open it (per the new no-auto-open behavior).
       fireEvent.click(screen.getByText("Groups"));
-      joinGroupFromDiscover("Monkey Business");
+      await joinGroupFromDiscover("Monkey Business");
 
-      // Open a private chat instead, and trigger an auto-reply there —
-      // this should NOT bump the group's unread count.
+      // Open a private chat instead, and send there — this should NOT bump
+      // the group's unread count.
       fireEvent.click(screen.getByText("Users"));
       fireEvent.click(screen.getByText("Nara"));
       fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
         target: { value: "hi" },
       });
       fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-      await vi.advanceTimersByTimeAsync(2000);
 
       fireEvent.click(screen.getByText("Groups"));
       expect(screen.queryByText("(1)")).not.toBeInTheDocument();
 
-      // Now open the group and send a message there (queues an auto-reply),
-      // then switch the *active room* back to Nara before the reply lands.
-      // (Toggling the sidebar's Users/Groups view alone doesn't change which
-      // room is active — only clicking a room does — so switch rooms, not tabs.)
-      fireEvent.click(screen.getByText("Monkey Business", { exact: false }));
-      fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
-        target: { value: "anyone around?" },
+      // Someone else posts into Monkey Business while it isn't the active
+      // room — there's no auto-reply bot in the real app (backend/API.md §5),
+      // so this simulates a second real client via the fake API directly.
+      fakeApi.__injectMessage("group:g-monkey-business", {
+        senderId: "c-nara",
+        senderName: "Nara",
+        text: "anyone around?",
       });
-      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-      fireEvent.click(screen.getByText("Users"));
-      fireEvent.click(screen.getAllByText("Nara")[0]);
-      await vi.advanceTimersByTimeAsync(2000);
 
-      fireEvent.click(screen.getByText("Groups"));
-      expect(screen.getByText("(1)")).toBeInTheDocument();
+      // Unread counts only refresh on the periodic poll (~10s, see
+      // useChatStore's UNREAD_POLL_INTERVAL_MS) — wait for a real tick.
+      await waitFor(
+        () => {
+          fireEvent.click(screen.getByText("Groups"));
+          expect(screen.getByText("(1)")).toBeInTheDocument();
+        },
+        { timeout: 12_000, interval: 500 },
+      );
 
-      // Opening the room again should clear the badge. "Monkey Business" now
-      // matches both the sidebar row and its open tab, so target the sidebar.
+      // Opening the room clears the badge immediately (optimistic local
+      // reset), no poll wait needed.
       fireEvent.click(screen.getAllByText("Monkey Business")[0]);
       fireEvent.click(screen.getByText("Groups"));
       expect(screen.queryByText("(1)")).not.toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    },
+    15_000,
+  );
 });
