@@ -1,0 +1,41 @@
+import { prisma } from "../db/prisma";
+
+export const clientRepository = {
+  findByNameCaseInsensitive(name: string) {
+    return prisma.client.findFirst({
+      where: { name: { equals: name, mode: "insensitive" } },
+    });
+  },
+
+  create(name: string) {
+    return prisma.client.create({
+      data: { name, online: true, lastSeenAt: new Date() },
+    });
+  },
+
+  findById(id: string) {
+    return prisma.client.findUnique({ where: { id } });
+  },
+
+  findAll() {
+    return prisma.client.findMany({ orderBy: { createdAt: "asc" } });
+  },
+
+  setOnline(id: string, online: boolean) {
+    return prisma.client.update({ where: { id }, data: { online } });
+  },
+
+  heartbeat(id: string) {
+    return prisma.client.update({
+      where: { id },
+      data: { online: true, lastSeenAt: new Date() },
+    });
+  },
+
+  markStaleOffline(staleBefore: Date) {
+    return prisma.client.updateMany({
+      where: { online: true, lastSeenAt: { lt: staleBefore } },
+      data: { online: false },
+    });
+  },
+};
