@@ -9,9 +9,9 @@ export function JoinScreen() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const result = join(name);
+    const result = await join(name);
     if (!result.ok) {
       setError(result.error);
       return;

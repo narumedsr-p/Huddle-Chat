@@ -1,25 +1,47 @@
 import { Send } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../ui/Button";
 
 interface MessageInputProps {
   onSend: (text: string) => void;
+  onTyping?: (typing: boolean) => void;
 }
 
-export function MessageInput({ onSend }: MessageInputProps) {
+const TYPING_REPORT_THROTTLE_MS = 3000;
+
+export function MessageInput({ onSend, onTyping }: MessageInputProps) {
   const [text, setText] = useState("");
+  const lastTypingSentAt = useRef(0);
+
+  function reportTyping(isTyping: boolean) {
+    if (!onTyping) return;
+    if (!isTyping) {
+      lastTypingSentAt.current = 0;
+      onTyping(false);
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTypingSentAt.current < TYPING_REPORT_THROTTLE_MS) return;
+    lastTypingSentAt.current = now;
+    onTyping(true);
+  }
 
   function submit() {
     if (!text.trim()) return;
     onSend(text);
     setText("");
+    reportTyping(false);
   }
 
   return (
     <div className="flex items-end gap-2 border-t border-brown-100 bg-white/70 px-4 py-3">
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          const next = e.target.value;
+          setText(next);
+          reportTyping(next.trim().length > 0);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
