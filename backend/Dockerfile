@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
@@ -10,7 +10,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Runtime stage
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
@@ -19,6 +19,7 @@ RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
+COPY openapi.yaml ./openapi.yaml
 
 EXPOSE 4000
 CMD ["npm", "run", "start"]
