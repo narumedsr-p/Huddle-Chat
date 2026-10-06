@@ -1,0 +1,524 @@
+openapi: 3.0.3
+info:
+  title: 1Carry3Monkey API
+  version: "1.0"
+  description: >
+    REST API backing the 1Carry3Monkey chat app. No WebSocket — realtime-ish data
+    (new messages, typing, presence, group membership changes) is surfaced via
+    short-interval polling. See backend/API.md for the full design rationale.
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: sessions
+  - name: clients
+  - name: groups
+  - name: rooms
+
+paths:
+  /sessions:
+    post:
+      tags: [sessions]
+      operationId: joinSession
+      summary: Join — pick a unique display name and become a new client
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Nara
+      responses:
+        "201":
+          description: Joined successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, client]
+                properties:
+                  token:
+                    type: string
+                    example: 4daf26bac3ee75d75e0d203e448f8cc
+                  client:
+                    $ref: "#/components/schemas/Client"
+        "400":
+          description: EMPTY_NAME or NAME_TOO_LONG
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: NAME_TAKEN
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /sessions/me:
+    delete:
+      tags: [sessions]
+      operationId: logout
+      summary: Logout — marks the client offline and invalidates the token
+      responses:
+        "204":
+          description: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /sessions/me/heartbeat:
+    post:
+      tags: [sessions]
+      operationId: heartbeat
+      summary: Presence keep-alive — call every ~20s while the tab is open
+      responses:
+        "204":
+          description: Heartbeat recorded
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients:
+    get:
+      tags: [clients]
+      operationId: listClients
+      summary: List every client (for the Users tab). Poll for presence changes.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clients]
+                properties:
+                  clients:
+                    type: array
+                    items: { $ref: "#/components/schemas/Client" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/me:
+    get:
+      tags: [clients]
+      operationId: getCurrentClient
+      summary: The current client, resolved from the bearer token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [client]
+                properties:
+                  client: { $ref: "#/components/schemas/Client" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/me/unread-counts:
+    get:
+      tags: [clients]
+      operationId: getUnreadCounts
+      summary: Unread message counts per room, keyed by roomId. Poll ~10s.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unreadCounts]
+                properties:
+                  unreadCounts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      "group:g-monkey-business": 2
+                      "private:c-ploy": 1
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /groups:
+    get:
+      tags: [groups]
+      operationId: listGroups
+      summary: Every group, joined or not. Poll ~15-30s for membership changes.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups]
+                properties:
+                  groups:
+                    type: array
+                    items: { $ref: "#/components/schemas/Group" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [groups]
+      operationId: createGroup
+      summary: Create a group (creator becomes the sole member immediately)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Jungle Devs
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "400":
+          description: EMPTY_NAME
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: GROUP_NAME_TAKEN
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /groups/{groupId}/members:
+    post:
+      tags: [groups]
+      operationId: joinGroup
+      summary: Join a group as the caller
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: Joined — returns the updated group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: GROUP_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: ALREADY_MEMBER
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /groups/{groupId}/members/me:
+    delete:
+      tags: [groups]
+      operationId: leaveGroup
+      summary: Leave a group (the group itself is never deleted)
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "204":
+          description: Left the group
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: GROUP_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: NOT_A_MEMBER
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /rooms/{roomId}/messages:
+    get:
+      tags: [rooms]
+      operationId: listMessages
+      summary: Message history, cursor-paginated
+      description: >
+        Private rooms have no membership gate (any client may message any other).
+        Group rooms require membership. Use `before` to page backwards for
+        scroll-up history, `after` to poll for new messages in an open room.
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+        - name: before
+          in: query
+          description: Epoch ms — return messages strictly older than this
+          schema: { type: integer }
+        - name: after
+          in: query
+          description: Epoch ms — return messages strictly newer than this (polling)
+          schema: { type: integer }
+        - name: limit
+          in: query
+          description: Max rows for the `before` page (default 50; ignored with `after`)
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages, hasMore]
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+                  hasMore:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: NOT_A_PARTICIPANT — group room you haven't joined
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: CLIENT_NOT_FOUND — private room's other client doesn't exist
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [rooms]
+      operationId: sendMessage
+      summary: Send a message
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  example: are we on track for the deadline
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400":
+          description: EMPTY_TEXT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: NOT_A_PARTICIPANT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: CLIENT_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /rooms/{roomId}/typing:
+    get:
+      tags: [rooms]
+      operationId: getTyping
+      summary: Who's currently typing in this room. Poll while the room is active.
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [typing]
+                properties:
+                  typing:
+                    type: array
+                    items: { $ref: "#/components/schemas/Typer" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: NOT_A_PARTICIPANT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: CLIENT_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      tags: [rooms]
+      operationId: setTyping
+      summary: Report your own typing state (auto-expires after ~5s server-side)
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [typing]
+              properties:
+                typing: { type: boolean }
+      responses:
+        "204":
+          description: Recorded
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: NOT_A_PARTICIPANT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: CLIENT_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /rooms/{roomId}/read:
+    put:
+      tags: [rooms]
+      operationId: markRoomRead
+      summary: Mark this room read as of now (clears the caller's unread count)
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "204":
+          description: Marked read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: NOT_A_PARTICIPANT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token returned by `POST /sessions`
+
+  parameters:
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema: { type: string }
+      example: g-monkey-business
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      description: >
+        `private:<clientId>` or `group:<groupId>`, relative to the caller.
+        Percent-encode the colon (e.g. `group%3Ag-monkey-business`).
+      schema: { type: string }
+      example: "group:g-monkey-business"
+
+  responses:
+    Unauthorized:
+      description: UNAUTHORIZED — missing or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Client:
+      type: object
+      required: [id, name, online]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        online: { type: boolean }
+      example:
+        id: c-nara
+        name: Nara
+        online: true
+
+    Group:
+      type: object
+      required: [id, name, createdBy, memberIds]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdBy:
+          type: string
+          description: Client.id of the creator
+        memberIds:
+          type: array
+          items: { type: string }
+      example:
+        id: g-monkey-business
+        name: Monkey Business
+        createdBy: c-nara
+        memberIds: [c-nara, c-ploy]
+
+    Message:
+      type: object
+      required: [id, roomId, senderId, senderName, text, timestamp]
+      properties:
+        id: { type: string }
+        roomId:
+          type: string
+          example: "group:g-monkey-business"
+        senderId: { type: string }
+        senderName: { type: string }
+        text: { type: string }
+        timestamp:
+          type: integer
+          description: Epoch ms
+      example:
+        id: m2
+        roomId: "group:g-monkey-business"
+        senderId: c-nara
+        senderName: Nara
+        text: are we on track for the deadline
+        timestamp: 1735900100000
+
+    Typer:
+      type: object
+      required: [clientId, name]
+      properties:
+        clientId: { type: string }
+        name: { type: string }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: NAME_TAKEN
+            message:
+              type: string
+              example: '"Nara" is already taken. Try another name.'
