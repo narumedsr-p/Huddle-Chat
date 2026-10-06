@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  online     Boolean  @default(false)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  sentMessages    Message[]     @relation("sender")
+  receivedMessages Message[]    @relation("recipient")
+  createdGroups   Group[]       @relation("creator")
+  groupMemberships GroupMember[]
+  sessions        Session[]
+  readStates      ReadState[]
+  typingStates    TypingState[]
+}
+
+model Group {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdBy String
+  creator   Client   @relation("creator", fields: [createdBy], references: [id])
+  createdAt DateTime @default(now())
+
+  members  GroupMember[]
+  messages Message[]
+}
+
+model GroupMember {
+  groupId  String
+  clientId String
+  joinedAt DateTime @default(now())
+
+  group  Group  @relation(fields: [groupId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@id([groupId, clientId])
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  senderId    String
+  sender      Client   @relation("sender", fields: [senderId], references: [id])
+  text        String
+  timestamp   DateTime @default(now())
+
+  groupId     String?
+  group       Group?   @relation(fields: [groupId], references: [id])
+
+  recipientId String?
+  recipient   Client?  @relation("recipient", fields: [recipientId], references: [id])
+
+  @@index([groupId, timestamp])
+  @@index([senderId, recipientId, timestamp])
+}
+
+model ReadState {
+  clientId   String
+  roomKey    String
+  lastReadAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@id([clientId, roomKey])
+}
+
+model TypingState {
+  clientId  String
+  roomKey   String
+  updatedAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@id([clientId, roomKey])
+}
+
+model Session {
+  token     String   @id
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  createdAt DateTime @default(now())
+}
