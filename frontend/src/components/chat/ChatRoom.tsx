@@ -11,7 +11,7 @@ interface ChatRoomProps {
 }
 
 export function ChatRoom({ roomId }: ChatRoomProps) {
-  const { clients, groups, messagesByRoom, typingRoomIds, sendMessage, leaveGroup } =
+  const { clients, groups, messagesByRoom, typingRoomIds, sendMessage, leaveGroup, setTyping } =
     useChatStore();
   const [membersOpen, setMembersOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
@@ -77,7 +77,10 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
         typing={isTyping ? typingName : null}
       />
 
-      <MessageInput onSend={(text) => sendMessage(roomId, text)} />
+      <MessageInput
+        onSend={(text) => sendMessage(roomId, text)}
+        onTyping={(typing) => setTyping(roomId, typing)}
+      />
 
       {group && (
         <>

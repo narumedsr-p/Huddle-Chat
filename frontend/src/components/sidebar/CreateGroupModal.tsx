@@ -13,9 +13,9 @@ export function CreateGroupModal({ open, onClose }: CreateGroupModalProps) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const result = createGroup(name);
+    const result = await createGroup(name);
     if (!result.ok) {
       setError(result.error);
       return;
