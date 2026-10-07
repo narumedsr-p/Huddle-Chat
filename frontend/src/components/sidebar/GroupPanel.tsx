@@ -1,5 +1,6 @@
 import { Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
+import { formatUnreadCount } from "../../lib/unread";
 import { groupRoomId, useChatStore } from "../../state/useChatStore";
 import type { Client, Group } from "../../types";
 import { GroupMembersModal } from "../GroupMembersModal";
@@ -93,11 +94,11 @@ export function GroupPanel() {
                       <span className="flex-1 truncate">{group.name}</span>
                       {unread > 0 && (
                         <span
-                          className={`shrink-0 text-xs ${
-                            isActive ? "text-cream/80" : "text-ink-soft"
+                          className={`shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold leading-none ${
+                            isActive ? "bg-white/20 text-cream" : "bg-brown-600 text-cream"
                           }`}
                         >
-                          ({unread})
+                          {formatUnreadCount(unread)}
                         </span>
                       )}
                     </button>
