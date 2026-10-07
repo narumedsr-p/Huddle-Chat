@@ -1,10 +1,11 @@
 import { AppShell } from "./components/AppShell";
-import { JoinScreen } from "./components/JoinScreen";
+import { AuthScreen } from "./components/AuthScreen";
 import { ChatStoreProvider, useChatStore } from "./state/useChatStore";
 
 function Root() {
-  const { currentUser } = useChatStore();
-  return currentUser ? <AppShell /> : <JoinScreen />;
+  const { currentUser, authLoading } = useChatStore();
+  if (authLoading) return null;
+  return currentUser ? <AppShell /> : <AuthScreen />;
 }
 
 function App() {
