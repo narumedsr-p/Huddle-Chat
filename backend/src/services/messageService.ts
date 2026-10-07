@@ -1,8 +1,10 @@
 import { AppError } from "../lib/errors";
-import { parseRoomId } from "../lib/roomId";
+import { groupRoomKey, parseRoomId, privateRoomKey } from "../lib/roomId";
 import { clientRepository } from "../repositories/clientRepository";
 import { groupRepository } from "../repositories/groupRepository";
 import { messageRepository } from "../repositories/messageRepository";
+import { hub } from "../ws/hub";
+import { readStateService } from "./readStateService";
 
 const DEFAULT_PAGE_LIMIT = 50;
 const MAX_POLL_LIMIT = 200;
@@ -69,6 +71,27 @@ export const messageService = {
       ref.kind === "group"
         ? await messageRepository.createGroupMessage(ref.groupId, callerId, text)
         : await messageRepository.createPrivateMessage(callerId, ref.otherClientId, text);
-    return toDto(row, roomId);
+    const dto = toDto(row, roomId);
+
+    if (ref.kind === "group") {
+      const group = await groupRepository.findByIdWithMembers(ref.groupId);
+      const sharedRoomId = groupRoomKey(ref.groupId);
+      for (const member of group?.members ?? []) {
+        hub.sendTo(member.clientId, "message", { ...dto, roomId: sharedRoomId });
+        if (member.clientId === callerId) continue;
+        const count = await readStateService.unreadCountForGroup(ref.groupId, member.clientId);
+        hub.sendTo(member.clientId, "unread", { roomId: sharedRoomId, count });
+      }
+    } else {
+      // Each side names this conversation after the other person, so the
+      // payload sent to A and the one sent to B carry different roomIds for
+      // what's otherwise the same event.
+      hub.sendTo(callerId, "message", dto);
+      hub.sendTo(ref.otherClientId, "message", { ...dto, roomId: privateRoomKey(callerId) });
+      const count = await readStateService.unreadCountForPrivate(ref.otherClientId, callerId);
+      hub.sendTo(ref.otherClientId, "unread", { roomId: privateRoomKey(callerId), count });
+    }
+
+    return dto;
   },
 };

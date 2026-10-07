@@ -10,6 +10,20 @@ export const readStateService = {
     await readStateRepository.upsert(clientId, roomId, new Date());
   },
 
+  async unreadCountForGroup(groupId: string, clientId: string) {
+    const roomKey = groupRoomKey(groupId);
+    const readState = await readStateRepository.find(clientId, roomKey);
+    const lastReadAt = readState?.lastReadAt ?? EPOCH;
+    return messageRepository.countUnreadForGroup(groupId, clientId, lastReadAt);
+  },
+
+  async unreadCountForPrivate(selfId: string, otherId: string) {
+    const roomKey = privateRoomKey(otherId);
+    const readState = await readStateRepository.find(selfId, roomKey);
+    const lastReadAt = readState?.lastReadAt ?? EPOCH;
+    return messageRepository.countUnreadForPrivate(selfId, otherId, lastReadAt);
+  },
+
   async unreadCounts(clientId: string) {
     const result: Record<string, number> = {};
 

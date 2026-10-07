@@ -39,4 +39,16 @@ export const groupRepository = {
       .delete({ where: { groupId_clientId: { groupId, clientId } } })
       .catch(() => null);
   },
+
+  countMembers(groupId: string) {
+    return prisma.groupMember.count({ where: { groupId } });
+  },
+
+  deleteGroup(groupId: string) {
+    return prisma.$transaction([
+      prisma.message.deleteMany({ where: { groupId } }),
+      prisma.groupMember.deleteMany({ where: { groupId } }),
+      prisma.group.delete({ where: { id: groupId } }),
+    ]);
+  },
 };

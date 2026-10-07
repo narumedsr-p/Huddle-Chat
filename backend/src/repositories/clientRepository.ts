@@ -22,20 +22,9 @@ export const clientRepository = {
   },
 
   setOnline(id: string, online: boolean) {
-    return prisma.client.update({ where: { id }, data: { online } });
-  },
-
-  heartbeat(id: string) {
     return prisma.client.update({
       where: { id },
-      data: { online: true, lastSeenAt: new Date() },
-    });
-  },
-
-  markStaleOffline(staleBefore: Date) {
-    return prisma.client.updateMany({
-      where: { online: true, lastSeenAt: { lt: staleBefore } },
-      data: { online: false },
+      data: online ? { online, lastSeenAt: new Date() } : { online },
     });
   },
 };

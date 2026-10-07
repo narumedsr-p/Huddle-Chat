@@ -1,5 +1,6 @@
 import { AppError } from "../lib/errors";
 import { groupRepository } from "../repositories/groupRepository";
+import { hub } from "../ws/hub";
 
 interface GroupWithMembers {
   id: string;
@@ -32,7 +33,10 @@ export const groupService = {
     }
     const group = await groupRepository.create(name, creatorId);
     if (!group) throw new AppError(500, "INTERNAL_ERROR", "Failed to create group.");
-    return toDto(group);
+    const dto = toDto(group);
+    // Discover is global — everyone's roster gets the new group, member or not.
+    hub.broadcast("group", dto);
+    return dto;
   },
 
   async join(groupId: string, clientId: string) {
@@ -44,7 +48,9 @@ export const groupService = {
     }
     await groupRepository.addMember(groupId, clientId);
     const updated = await groupRepository.findByIdWithMembers(groupId);
-    return toDto(updated!);
+    const dto = toDto(updated!);
+    hub.broadcast("group", dto);
+    return dto;
   },
 
   async leave(groupId: string, clientId: string) {
@@ -55,5 +61,14 @@ export const groupService = {
       throw new AppError(409, "NOT_A_MEMBER", "You're not a member of this group.");
     }
     await groupRepository.removeMember(groupId, clientId);
+
+    const remaining = await groupRepository.countMembers(groupId);
+    if (remaining === 0) {
+      await groupRepository.deleteGroup(groupId);
+      hub.broadcast("groupDeleted", { groupId });
+    } else {
+      const updated = await groupRepository.findByIdWithMembers(groupId);
+      hub.broadcast("group", toDto(updated!));
+    }
   },
 };
