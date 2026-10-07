@@ -11,7 +11,8 @@ export const clientsController = {
 
   async me(req: Request, res: Response) {
     const authed = req as AuthedRequest;
-    res.json({ client: authed.client });
+    const client = await clientService.getById(authed.client.id);
+    res.json({ client });
   },
 
   async unreadCounts(req: Request, res: Response) {
