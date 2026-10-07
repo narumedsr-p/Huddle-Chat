@@ -3,9 +3,12 @@ info:
   title: 1Carry3Monkey API
   version: "1.0"
   description: >
-    REST API backing the 1Carry3Monkey chat app. No WebSocket — realtime-ish data
-    (new messages, typing, presence, group membership changes) is surfaced via
-    short-interval polling. See backend/API.md for the full design rationale.
+    REST API backing the 1Carry3Monkey chat app. Mutations and one-shot reads live
+    here; pushed/realtime data (new messages, typing, presence, group membership
+    changes) goes over the WebSocket documented under the `realtime` tag below —
+    OpenAPI has no first-class vocabulary for a socket, so it's written up as a
+    single GET whose "response" is the set of frame shapes the server can push,
+    same approach backend/API.md §5 uses in prose.
 servers:
   - url: /api/v1
 
@@ -13,17 +16,18 @@ security:
   - bearerAuth: []
 
 tags:
-  - name: sessions
+  - name: auth
   - name: clients
   - name: groups
   - name: rooms
+  - name: realtime
 
 paths:
-  /sessions:
+  /auth/register:
     post:
-      tags: [sessions]
-      operationId: joinSession
-      summary: Join — pick a unique display name and become a new client
+      tags: [auth]
+      operationId: register
+      summary: Register — pick a unique display name and password to create a client
       security: []
       requestBody:
         required: true
@@ -31,14 +35,18 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [name, password]
               properties:
                 name:
                   type: string
                   example: Nara
+                password:
+                  type: string
+                  format: password
+                  example: Password123!
       responses:
         "201":
-          description: Joined successfully
+          description: Registered successfully
           content:
             application/json:
               schema:
@@ -51,7 +59,7 @@ paths:
                   client:
                     $ref: "#/components/schemas/Client"
         "400":
-          description: EMPTY_NAME or NAME_TOO_LONG
+          description: EMPTY_NAME, NAME_TOO_LONG, EMPTY_PASSWORD, or PASSWORD_TOO_SHORT
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -61,9 +69,55 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
-  /sessions/me:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in with an existing display name and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, password]
+              properties:
+                name:
+                  type: string
+                  example: Nara
+                password:
+                  type: string
+                  format: password
+                  example: Password123!
+      responses:
+        "200":
+          description: Logged in successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, client]
+                properties:
+                  token:
+                    type: string
+                    example: 4daf26bac3ee75d75e0d203e448f8cc
+                  client:
+                    $ref: "#/components/schemas/Client"
+        "400":
+          description: EMPTY_NAME or EMPTY_PASSWORD
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: INVALID_CREDENTIALS
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/logout:
     delete:
-      tags: [sessions]
+      tags: [auth]
       operationId: logout
       summary: Logout — marks the client offline and invalidates the token
       responses:
@@ -72,22 +126,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /sessions/me/heartbeat:
-    post:
-      tags: [sessions]
-      operationId: heartbeat
-      summary: Presence keep-alive — call every ~20s while the tab is open
-      responses:
-        "204":
-          description: Heartbeat recorded
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
   /clients:
     get:
       tags: [clients]
       operationId: listClients
-      summary: List every client (for the Users tab). Poll for presence changes.
+      summary: List every client (for the Users tab). Fetched once on login; presence after that comes from the WS `presence` event.
       responses:
         "200":
           description: OK
@@ -125,7 +168,7 @@ paths:
     get:
       tags: [clients]
       operationId: getUnreadCounts
-      summary: Unread message counts per room, keyed by roomId. Poll ~10s.
+      summary: Unread message counts per room, keyed by roomId. Fetched once on login/reconnect; kept current after that by the WS `unread` event.
       responses:
         "200":
           description: OK
@@ -149,7 +192,7 @@ paths:
     get:
       tags: [groups]
       operationId: listGroups
-      summary: Every group, joined or not. Poll ~15-30s for membership changes.
+      summary: Every group, joined or not. Fetched once on login/reconnect; membership changes after that arrive as WS `group`/`groupDeleted` events.
       responses:
         "200":
           description: OK
@@ -228,7 +271,7 @@ paths:
     delete:
       tags: [groups]
       operationId: leaveGroup
-      summary: Leave a group (the group itself is never deleted)
+      summary: Leave a group — if the caller was the last member, the group is deleted outright instead of being left empty
       parameters:
         - $ref: "#/components/parameters/GroupId"
       responses:
@@ -255,7 +298,9 @@ paths:
       description: >
         Private rooms have no membership gate (any client may message any other).
         Group rooms require membership. Use `before` to page backwards for
-        scroll-up history, `after` to poll for new messages in an open room.
+        scroll-up history on initial room open; `after` to resync anything
+        missed after a WS reconnect (new messages while connected arrive as
+        the `message` WS event instead, see the `realtime` tag).
       parameters:
         - $ref: "#/components/parameters/RoomId"
         - name: before
@@ -264,7 +309,7 @@ paths:
           schema: { type: integer }
         - name: after
           in: query
-          description: Epoch ms — return messages strictly newer than this (polling)
+          description: Epoch ms — return messages strictly newer than this (used to resync after a WS reconnect)
           schema: { type: integer }
         - name: limit
           in: query
@@ -337,68 +382,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
-  /rooms/{roomId}/typing:
-    get:
-      tags: [rooms]
-      operationId: getTyping
-      summary: Who's currently typing in this room. Poll while the room is active.
-      parameters:
-        - $ref: "#/components/parameters/RoomId"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [typing]
-                properties:
-                  typing:
-                    type: array
-                    items: { $ref: "#/components/schemas/Typer" }
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: NOT_A_PARTICIPANT
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "404":
-          description: CLIENT_NOT_FOUND
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-    put:
-      tags: [rooms]
-      operationId: setTyping
-      summary: Report your own typing state (auto-expires after ~5s server-side)
-      parameters:
-        - $ref: "#/components/parameters/RoomId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [typing]
-              properties:
-                typing: { type: boolean }
-      responses:
-        "204":
-          description: Recorded
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: NOT_A_PARTICIPANT
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "404":
-          description: CLIENT_NOT_FOUND
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-
   /rooms/{roomId}/read:
     put:
       tags: [rooms]
@@ -417,12 +400,65 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /ws:
+    servers:
+      - url: /
+    get:
+      tags: [realtime]
+      operationId: realtimeConnect
+      summary: Upgrade to a WebSocket — one connection per tab, every push type below multiplexed over it
+      security: []
+      description: >
+        Not a real REST call — this is the HTTP GET that asks to switch protocols
+        (`Connection: Upgrade`, `Upgrade: websocket`). The server replies
+        `101 Switching Protocols` and from then on the same TCP connection carries
+        WebSocket frames, each shaped `{ "type": "<name>", "payload": {...} }`.
+        The `101` response below enumerates every `payload` the server can push,
+        one schema per `type` — see backend/API.md §5 for the roomId addressing
+        rule (private rooms are named relative to the recipient, group rooms use
+        one shared id). Auth is a query param, not the `Authorization` header,
+        because the browser `WebSocket` constructor can't set custom headers on
+        the handshake request; a missing or invalid token gets the connection
+        closed with code `4001` rather than an HTTP error body. The only frame
+        the client ever sends back is `TypingSend` — no ack, and a `typing: true`
+        with no follow-up is expected to expire on the receiving end after a few
+        seconds rather than rely on an explicit "stop" always arriving.
+
+
+        This connection replaces six REST endpoints that used to get polled on a
+        timer — `GET /rooms/:roomId/messages?after=`, `GET`/`PUT
+        /rooms/:roomId/typing` (both removed), `POST /sessions/me/heartbeat`
+        (removed), `GET /clients`, `GET /groups`, and `GET
+        /clients/me/unread-counts` — see the "What moved off REST" table in
+        backend/API.md §5 for the full mapping. Every other REST operation in
+        this document is unchanged.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: Same session token `POST /auth/login`/`register` returns.
+          schema: { type: string }
+      responses:
+        "101":
+          description: Switching Protocols — pushed frames match one of these schemas.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/MessagePush"
+                  - $ref: "#/components/schemas/TypingPush"
+                  - $ref: "#/components/schemas/UnreadPush"
+                  - $ref: "#/components/schemas/PresencePush"
+                  - $ref: "#/components/schemas/ClientPush"
+                  - $ref: "#/components/schemas/GroupPush"
+                  - $ref: "#/components/schemas/GroupDeletedPush"
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Token returned by `POST /sessions`
+      description: Token returned by `POST /auth/register` or `POST /auth/login`
 
   parameters:
     GroupId:
@@ -501,12 +537,88 @@ components:
         text: are we on track for the deadline
         timestamp: 1735900100000
 
-    Typer:
+    MessagePush:
       type: object
-      required: [clientId, name]
+      required: [type, payload]
       properties:
-        clientId: { type: string }
-        name: { type: string }
+        type: { type: string, enum: [message] }
+        payload: { $ref: "#/components/schemas/Message" }
+
+    TypingPush:
+      type: object
+      required: [type, payload]
+      properties:
+        type: { type: string, enum: [typing] }
+        payload:
+          type: object
+          required: [roomId, clientId, name, typing]
+          properties:
+            roomId: { type: string, example: "private:c-nara" }
+            clientId: { type: string }
+            name: { type: string }
+            typing: { type: boolean }
+
+    TypingSend:
+      type: object
+      description: Client → server. The one frame type sent instead of received.
+      required: [type, roomId, typing]
+      properties:
+        type: { type: string, enum: [typing] }
+        roomId: { type: string, example: "group:g-monkey-business" }
+        typing: { type: boolean }
+
+    UnreadPush:
+      type: object
+      required: [type, payload]
+      properties:
+        type: { type: string, enum: [unread] }
+        payload:
+          type: object
+          required: [roomId, count]
+          properties:
+            roomId: { type: string, example: "private:c-ploy" }
+            count: { type: integer }
+
+    PresencePush:
+      type: object
+      required: [type, payload]
+      properties:
+        type: { type: string, enum: [presence] }
+        payload:
+          type: object
+          required: [clientId, online]
+          properties:
+            clientId: { type: string }
+            online: { type: boolean }
+
+    ClientPush:
+      type: object
+      description: >
+        Sent on registration — unlike `presence`, which only flips an online
+        flag on a roster entry the receiver already has, this carries the full
+        record for a client nobody's seen yet.
+      required: [type, payload]
+      properties:
+        type: { type: string, enum: [client] }
+        payload: { $ref: "#/components/schemas/Client" }
+
+    GroupPush:
+      type: object
+      required: [type, payload]
+      properties:
+        type: { type: string, enum: [group] }
+        payload: { $ref: "#/components/schemas/Group" }
+
+    GroupDeletedPush:
+      type: object
+      required: [type, payload]
+      properties:
+        type: { type: string, enum: [groupDeleted] }
+        payload:
+          type: object
+          required: [groupId]
+          properties:
+            groupId: { type: string }
 
     Error:
       type: object

@@ -29,3 +29,16 @@ npx prisma migrate dev          # first time only, or after schema changes
 npm run prisma:seed             # optional, loads the demo fixture
 npm run dev                     # serves on :4000, proxied by the frontend's vite dev server
 ```
+
+## Reset the database
+
+Wipes all data, reapplies migrations, and reloads the demo fixture in one shot. Run from `backend/`
+(not the repo root):
+
+```sh
+cd backend
+DATABASE_URL="postgresql://app:app@localhost:5432/carry3monkey" npx prisma migrate reset --force
+```
+
+Prompts for confirmation first — it's destructive. Only use against the local dev Postgres above,
+never a shared/production database.
