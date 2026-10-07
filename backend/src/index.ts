@@ -1,23 +1,18 @@
 import { createApp } from "./app";
 import { prisma } from "./db/prisma";
-import { clientRepository } from "./repositories/clientRepository";
+import { attachWebSocketServer } from "./ws/server";
 
 const PORT = Number(process.env.PORT ?? 4000);
-const HEARTBEAT_TIMEOUT_MS = 45_000;
-const SWEEP_INTERVAL_MS = 15_000;
 
 async function main() {
   const app = await createApp();
-
-  app.listen(PORT, () => {
+  // HTTP and WS share one listening socket — the upgrade handshake (RFC 6455
+  // §4) rides in on the same TCP connection as the original GET, so there's
+  // only one server to bind, not two.
+  const server = app.listen(PORT, () => {
     console.log(`backend listening on :${PORT}`);
   });
-
-  setInterval(() => {
-    clientRepository.markStaleOffline(new Date(Date.now() - HEARTBEAT_TIMEOUT_MS)).catch((err) => {
-      console.error("presence sweep failed", err);
-    });
-  }, SWEEP_INTERVAL_MS);
+  attachWebSocketServer(server);
 }
 
 main().catch((err) => {
