@@ -1,11 +1,14 @@
+import { Bot } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useChatStore } from "../../state/useChatStore";
+import { CHATBOT_CLIENT } from "../../lib/chatbot";
+import { formatUnreadCount } from "../../lib/unread";
+import { privateRoomId, useChatStore } from "../../state/useChatStore";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SearchInput } from "../ui/SearchInput";
 
 export function UserPanel() {
-  const { clients, currentUser, openPrivateRoom, activeRoomId } = useChatStore();
+  const { clients, currentUser, unreadCounts, openPrivateRoom, activeRoomId } = useChatStore();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(
@@ -14,11 +17,14 @@ export function UserPanel() {
   );
   const online = filtered.filter((c) => c.online);
   const offline = filtered.filter((c) => !c.online);
+  const showBot = !query.trim();
 
   function renderClient(client: (typeof clients)[number]) {
     const isSelf = client.id === currentUser?.id;
-    const roomId = `private:${client.id}`;
+    const isBot = client.id === CHATBOT_CLIENT.id;
+    const roomId = privateRoomId(client.id);
     const isActive = activeRoomId === roomId;
+    const unread = unreadCounts[roomId] ?? 0;
     return (
       <li key={client.id}>
         <button
@@ -35,9 +41,23 @@ export function UserPanel() {
                   : "text-ink-soft/70 hover:bg-brown-50/60"
           }`}
         >
-          <Avatar name={client.name} size="sm" online={client.online} />
+          <Avatar
+            name={client.name}
+            size="sm"
+            online={client.online}
+            icon={isBot ? <Bot className="h-3.5 w-3.5" /> : undefined}
+          />
           <span className="flex-1 truncate">{client.name}</span>
           {isSelf && <Badge tone={isActive ? "gold" : "brown"}>you</Badge>}
+          {unread > 0 && (
+            <span
+              className={`shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold leading-none ${
+                isActive ? "bg-white/20 text-cream" : "bg-brown-600 text-cream"
+              }`}
+            >
+              {formatUnreadCount(unread)}
+            </span>
+          )}
         </button>
       </li>
     );
@@ -49,9 +69,12 @@ export function UserPanel() {
 
       <div>
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-          Online ({online.length})
+          Online ({online.length + (showBot ? 1 : 0)})
         </h2>
-        <ul className="flex flex-col gap-1">{online.map(renderClient)}</ul>
+        <ul className="flex flex-col gap-1">
+          {showBot && renderClient(CHATBOT_CLIENT)}
+          {online.map(renderClient)}
+        </ul>
       </div>
 
       {offline.length > 0 && (
