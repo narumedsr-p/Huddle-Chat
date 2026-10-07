@@ -1,8 +1,12 @@
+import type { ReactNode } from "react";
+
 interface AvatarProps {
   name: string;
   size?: "sm" | "md" | "lg";
   online?: boolean;
   showStatusDot?: boolean;
+  /** Overrides the initials with a custom icon, e.g. for non-human accounts. */
+  icon?: ReactNode;
 }
 
 const SIZE_CLASSES = {
@@ -20,7 +24,7 @@ function initials(name: string) {
     .join("");
 }
 
-export function Avatar({ name, size = "md", online = true, showStatusDot = true }: AvatarProps) {
+export function Avatar({ name, size = "md", online = true, showStatusDot = true, icon }: AvatarProps) {
   return (
     <div className="relative shrink-0">
       <div
@@ -30,7 +34,7 @@ export function Avatar({ name, size = "md", online = true, showStatusDot = true 
             : "bg-brown-100 text-brown-400 grayscale opacity-70"
         }`}
       >
-        {initials(name)}
+        {icon ?? initials(name)}
       </div>
       {showStatusDot && (
         <span

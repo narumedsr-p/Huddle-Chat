@@ -1,8 +1,10 @@
 import { DoorOpen, Hash, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
+import { CHATBOT_CLIENT_ID } from "../../lib/chatbot";
 import { roomMeta, useChatStore } from "../../state/useChatStore";
 import { GroupMembersModal } from "../GroupMembersModal";
 import { ConfirmModal } from "../ui/ConfirmModal";
+import { ChatbotRoom } from "./ChatbotRoom";
 import { MessageInput } from "./MessageInput";
 import { MessageWindow } from "./MessageWindow";
 
@@ -18,6 +20,9 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
 
   const meta = roomMeta(roomId, clients, groups);
   if (!meta) return null;
+  if (meta.kind === "private" && meta.refId === CHATBOT_CLIENT_ID) {
+    return <ChatbotRoom />;
+  }
 
   const messages = messagesByRoom[roomId] ?? [];
   const isTyping = !!typingRoomIds[roomId];
