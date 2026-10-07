@@ -2,13 +2,23 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "../components/AppShell";
-import { JoinScreen } from "../components/JoinScreen";
+import { AuthScreen } from "../components/AuthScreen";
 import { ChatStoreProvider, useChatStore } from "../state/useChatStore";
 import { fakeApi } from "./fakeApi";
 
 vi.mock("../api", async () => {
   const mod = await import("./fakeApi");
-  return { api: mod.fakeApi, ApiError: mod.FakeApiError };
+  return {
+    api: mod.fakeApi,
+    ApiError: mod.FakeApiError,
+    hasToken: mod.fakeApi.hasToken,
+    getToken: mod.fakeApi.getToken,
+  };
+});
+
+vi.mock("../ws/socket", async () => {
+  const mod = await import("./fakeApi");
+  return { ChatSocket: mod.FakeChatSocket };
 });
 
 // jsdom doesn't implement scrollIntoView (every real browser does) — stub it
@@ -22,8 +32,9 @@ beforeEach(() => {
 });
 
 function Root() {
-  const { currentUser } = useChatStore();
-  return currentUser ? <AppShell /> : <JoinScreen />;
+  const { currentUser, authLoading } = useChatStore();
+  if (authLoading) return null;
+  return currentUser ? <AppShell /> : <AuthScreen />;
 }
 
 function renderApp() {
@@ -34,14 +45,21 @@ function renderApp() {
   );
 }
 
-/** Joins and waits for the post-login clients roster (fetched from the fake
- * API) to land, so later synchronous `getByText("Nara")`-style lookups don't
- * race the initial poll. */
+/** Registers a fresh account and waits for the post-login clients roster
+ * (fetched from the fake API) to land, so later synchronous
+ * `getByText("Nara")`-style lookups don't race the initial poll. */
 async function join(name: string) {
+  fireEvent.click(screen.getByText("Register"));
   fireEvent.change(screen.getByPlaceholderText("Your display name"), {
     target: { value: name },
   });
-  fireEvent.click(screen.getByText("Join chat"));
+  fireEvent.change(screen.getByPlaceholderText("Password"), {
+    target: { value: "Password123!" },
+  });
+  fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
+    target: { value: "Password123!" },
+  });
+  fireEvent.click(screen.getByText("Create account"));
   await screen.findByText("Nara");
 }
 
@@ -291,33 +309,26 @@ describe("unread badge on My Groups", () => {
       fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
       fireEvent.click(screen.getByText("Groups"));
-      expect(screen.queryByText("(1)")).not.toBeInTheDocument();
+      expect(screen.queryByText("1")).not.toBeInTheDocument();
 
       // Someone else posts into Monkey Business while it isn't the active
       // room — there's no auto-reply bot in the real app (backend/API.md §5),
-      // so this simulates a second real client via the fake API directly.
+      // so this simulates a second real client's message landing over the
+      // socket (see FakeChatSocket in fakeApi.ts).
       fakeApi.__injectMessage("group:g-monkey-business", {
         senderId: "c-nara",
         senderName: "Nara",
         text: "anyone around?",
       });
 
-      // Unread counts only refresh on the periodic poll (~10s, see
-      // useChatStore's UNREAD_POLL_INTERVAL_MS) — wait for a real tick.
-      await waitFor(
-        () => {
-          fireEvent.click(screen.getByText("Groups"));
-          expect(screen.getByText("(1)")).toBeInTheDocument();
-        },
-        { timeout: 12_000, interval: 500 },
-      );
+      await waitFor(() => {
+        expect(screen.getByText("1")).toBeInTheDocument();
+      });
 
-      // Opening the room clears the badge immediately (optimistic local
-      // reset), no poll wait needed.
+      // Opening the room clears the badge immediately (optimistic local reset).
       fireEvent.click(screen.getAllByText("Monkey Business")[0]);
       fireEvent.click(screen.getByText("Groups"));
-      expect(screen.queryByText("(1)")).not.toBeInTheDocument();
+      expect(screen.queryByText("1")).not.toBeInTheDocument();
     },
-    15_000,
   );
 });
