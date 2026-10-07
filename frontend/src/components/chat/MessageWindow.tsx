@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { Sparkles } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { formatUnreadCount } from "../../lib/unread";
 import type { Message, RoomKind } from "../../types";
 import { MessageBubble } from "./MessageBubble";
 
@@ -7,6 +9,8 @@ interface MessageWindowProps {
   messages: Message[];
   kind: RoomKind;
   typing?: string | null;
+  /** Number of trailing messages that were unread when this room was opened. */
+  unreadCount?: number;
 }
 
 function isSameDay(a: number, b: number) {
@@ -41,6 +45,26 @@ function DateSeparator({ label }: { label: string }) {
   );
 }
 
+function UnreadSeparator({ count }: { count: number }) {
+  return (
+    <div className="flex items-center justify-center py-1">
+      <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-ink-soft shadow-pop">
+        {formatUnreadCount(count)} unread message{count === 1 ? "" : "s"}
+      </span>
+    </div>
+  );
+}
+
+// UI stub for a future AI summary feature — no backend wired up yet.
+function UnreadSummary() {
+  return (
+    <div className="mx-auto mb-1 flex max-w-sm items-start gap-2 rounded-2xl bg-white/80 px-3.5 py-2.5 text-xs text-ink-soft shadow-pop">
+      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-600" />
+      <span>AI summary coming soon — this'll recap what you missed.</span>
+    </div>
+  );
+}
+
 function TypingIndicator({ name }: { name: string }) {
   return (
     <motion.div
@@ -64,8 +88,10 @@ function TypingIndicator({ name }: { name: string }) {
   );
 }
 
-export function MessageWindow({ messages, kind, typing }: MessageWindowProps) {
+export function MessageWindow({ messages, kind, typing, unreadCount = 0 }: MessageWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const unreadStartIndex =
+    unreadCount > 0 ? Math.max(messages.length - unreadCount, 0) : -1;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -80,6 +106,12 @@ export function MessageWindow({ messages, kind, typing }: MessageWindowProps) {
           return (
             <div key={message.id}>
               {showDate && <DateSeparator label={formatDateLabel(message.timestamp)} />}
+              {i === unreadStartIndex && (
+                <>
+                  <UnreadSeparator count={unreadCount} />
+                  <UnreadSummary />
+                </>
+              )}
               <MessageBubble message={message} showSender={kind === "group"} />
             </div>
           );

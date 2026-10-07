@@ -5,11 +5,14 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
 } from "react";
 import type { ReactNode } from "react";
-import { api, ApiError } from "../api";
+import { api, ApiError, getToken, hasToken } from "../api";
 import type { ApiMessage } from "../api";
+import { CHATBOT_CLIENT, CHATBOT_CLIENT_ID } from "../lib/chatbot";
 import type { Client, Group, Message, Room, RoomKind } from "../types";
+import { ChatSocket } from "../ws/socket";
 
 export const PRIVATE_PREFIX = "private:";
 export const GROUP_PREFIX = "group:";
@@ -22,13 +25,14 @@ export function groupRoomId(groupId: string) {
   return `${GROUP_PREFIX}${groupId}`;
 }
 
-const HEARTBEAT_INTERVAL_MS = 20_000;
-const CLIENTS_POLL_INTERVAL_MS = 12_000;
-const GROUPS_POLL_INTERVAL_MS = 20_000;
-const UNREAD_POLL_INTERVAL_MS = 10_000;
-const ROOM_POLL_INTERVAL_MS = 2_500;
+// No TTL on the wire anymore — a stuck "typing…" just means the peer's last
+// frame was "true" and nothing ever told us otherwise, so the client has to
+// age it out itself instead of trusting the sender to always say "false".
+const TYPING_EXPIRY_MS = 4_000;
 
 interface State {
+  /** True until we've checked whether a stored session token is still valid. */
+  authLoading: boolean;
   currentUser: Client | null;
   clients: Client[];
   groups: Group[];
@@ -37,13 +41,19 @@ interface State {
   messagesByRoom: Record<string, Message[]>;
   typingRoomIds: Record<string, boolean>;
   unreadCounts: Record<string, number>;
+  /** Unread count captured the moment a room was opened, for the "Unread messages" divider. */
+  unreadDividers: Record<string, number>;
 }
 
 type Action =
   | { type: "JOIN"; client: Client }
+  | { type: "AUTH_CHECKED" }
   | { type: "SET_CLIENTS"; clients: Client[] }
+  | { type: "PATCH_CLIENT"; clientId: string; online: boolean }
+  | { type: "UPSERT_CLIENT"; client: Client }
   | { type: "SET_GROUPS"; groups: Group[] }
   | { type: "UPSERT_GROUP"; group: Group }
+  | { type: "REMOVE_GROUP"; groupId: string }
   | { type: "LEAVE_GROUP_LOCAL"; groupId: string; clientId: string }
   | { type: "OPEN_ROOM"; roomId: string }
   | { type: "CLOSE_ROOM"; roomId: string }
@@ -52,9 +62,11 @@ type Action =
   | { type: "REMOVE_MESSAGE"; roomId: string; id: string }
   | { type: "SET_TYPING"; roomId: string; typing: boolean }
   | { type: "SET_UNREAD"; unreadCounts: Record<string, number> }
+  | { type: "PATCH_UNREAD"; roomId: string; count: number }
   | { type: "RESET" };
 
 const initialState: State = {
+  authLoading: true,
   currentUser: null,
   clients: [],
   groups: [],
@@ -63,6 +75,7 @@ const initialState: State = {
   messagesByRoom: {},
   typingRoomIds: {},
   unreadCounts: {},
+  unreadDividers: {},
 };
 
 function mergeMessages(existing: Message[], incoming: Message[]): Message[] {
@@ -92,21 +105,48 @@ function errorMessage(err: unknown): string {
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "JOIN":
-      return { ...state, currentUser: action.client, clients: [action.client] };
+      return {
+        ...state,
+        authLoading: false,
+        currentUser: action.client,
+        clients: [action.client],
+      };
+    case "AUTH_CHECKED":
+      return { ...state, authLoading: false };
     case "SET_CLIENTS":
       return { ...state, clients: action.clients };
+    case "PATCH_CLIENT":
+      return {
+        ...state,
+        clients: state.clients.map((c) =>
+          c.id === action.clientId ? { ...c, online: action.online } : c,
+        ),
+      };
+    case "UPSERT_CLIENT": {
+      const exists = state.clients.some((c) => c.id === action.client.id);
+      return {
+        ...state,
+        clients: exists
+          ? state.clients.map((c) => (c.id === action.client.id ? action.client : c))
+          : [...state.clients, action.client],
+      };
+    }
     case "SET_GROUPS":
       return { ...state, groups: action.groups };
     case "UPSERT_GROUP":
       return { ...state, groups: upsertGroup(state.groups, action.group) };
+    case "REMOVE_GROUP":
+      return { ...state, groups: state.groups.filter((g) => g.id !== action.groupId) };
     case "LEAVE_GROUP_LOCAL":
       return {
         ...state,
-        groups: state.groups.map((g) =>
-          g.id === action.groupId
-            ? { ...g, memberIds: g.memberIds.filter((id) => id !== action.clientId) }
-            : g,
-        ),
+        groups: state.groups
+          .map((g) =>
+            g.id === action.groupId
+              ? { ...g, memberIds: g.memberIds.filter((id) => id !== action.clientId) }
+              : g,
+          )
+          .filter((g) => g.memberIds.length > 0),
       };
     case "OPEN_ROOM":
       return state.openRoomIds.includes(action.roomId)
@@ -125,6 +165,10 @@ function reducer(state: State, action: Action): State {
         ...state,
         activeRoomId: action.roomId,
         unreadCounts: { ...state.unreadCounts, [action.roomId]: 0 },
+        unreadDividers: {
+          ...state.unreadDividers,
+          [action.roomId]: state.unreadCounts[action.roomId] ?? 0,
+        },
       };
     case "MERGE_MESSAGES":
       return {
@@ -154,8 +198,13 @@ function reducer(state: State, action: Action): State {
       };
     case "SET_UNREAD":
       return { ...state, unreadCounts: action.unreadCounts };
+    case "PATCH_UNREAD":
+      return {
+        ...state,
+        unreadCounts: { ...state.unreadCounts, [action.roomId]: action.count },
+      };
     case "RESET":
-      return initialState;
+      return { ...initialState, authLoading: false };
     default:
       return state;
   }
@@ -168,6 +217,9 @@ export function roomMeta(
 ): { kind: RoomKind; name: string; refId: string; group?: Group } | null {
   if (roomId.startsWith(PRIVATE_PREFIX)) {
     const clientId = roomId.slice(PRIVATE_PREFIX.length);
+    if (clientId === CHATBOT_CLIENT_ID) {
+      return { kind: "private", name: CHATBOT_CLIENT.name, refId: CHATBOT_CLIENT_ID };
+    }
     const client = clients.find((c) => c.id === clientId);
     return client
       ? { kind: "private", name: client.name, refId: clientId }
@@ -185,7 +237,8 @@ export function roomMeta(
 
 interface ChatStoreValue extends State {
   rooms: Room[];
-  join: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  register: (name: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  login: (name: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => void;
   createGroup: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   joinGroup: (groupId: string) => void;
@@ -202,11 +255,17 @@ const ChatStoreContext = createContext<ChatStoreValue | null>(null);
 
 export function ChatStoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const socketRef = useRef<ChatSocket | null>(null);
+  const activeRoomIdRef = useRef<string | null>(null);
 
-  const join = useCallback(
-    async (name: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+  useEffect(() => {
+    activeRoomIdRef.current = state.activeRoomId;
+  }, [state.activeRoomId]);
+
+  const register = useCallback(
+    async (name: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> => {
       try {
-        const client = await api.join(name);
+        const client = await api.register(name, password);
         dispatch({ type: "JOIN", client: { ...client, isSelf: true } });
         return { ok: true };
       } catch (err) {
@@ -215,6 +274,34 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const login = useCallback(
+    async (name: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+      try {
+        const client = await api.login(name, password);
+        dispatch({ type: "JOIN", client: { ...client, isSelf: true } });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: errorMessage(err) };
+      }
+    },
+    [],
+  );
+
+  // Restore a logged-in session on page load if a token is already stored.
+  useEffect(() => {
+    if (!hasToken()) {
+      dispatch({ type: "AUTH_CHECKED" });
+      return;
+    }
+    api
+      .getMe()
+      .then((client) => dispatch({ type: "JOIN", client: { ...client, isSelf: true } }))
+      .catch(() => {
+        api.logout().catch(() => {});
+        dispatch({ type: "AUTH_CHECKED" });
+      });
+  }, []);
 
   const logout = useCallback(() => {
     api.logout().catch(() => {});
@@ -260,7 +347,8 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
     const roomId = privateRoomId(clientId);
     dispatch({ type: "OPEN_ROOM", roomId });
     dispatch({ type: "SET_ACTIVE", roomId });
-    api.markRead(roomId).catch(() => {});
+    // The Chatbot room is a frontend-only stub — no backend to mark read yet.
+    if (clientId !== CHATBOT_CLIENT_ID) api.markRead(roomId).catch(() => {});
   }, []);
 
   const openGroupRoom = useCallback((groupId: string) => {
@@ -301,6 +389,9 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
         .sendMessage(roomId, trimmed)
         .then((message) => {
           dispatch({ type: "REMOVE_MESSAGE", roomId, id: tempId });
+          // The server also echoes this same message back over the socket
+          // (so other tabs pick it up) — merging is idempotent on id, so
+          // whichever of the two arrives second is just a no-op.
           dispatch({ type: "MERGE_MESSAGES", roomId, messages: [toMessage(message, selfId)] });
         })
         .catch(() => {
@@ -311,116 +402,146 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const setTyping = useCallback((roomId: string, typing: boolean) => {
-    api.setTyping(roomId, typing).catch(() => {});
+    // Best-effort, unacknowledged — same tradeoff UDP makes for things where
+    // a dropped update isn't worth the cost of a retransmit.
+    socketRef.current?.send("typing", { roomId, typing });
   }, []);
 
-  // Account-level polling: presence heartbeat, client/group rosters, unread badges.
+  // One socket per login, carrying every push the old poll loops used to
+  // fetch separately: presence, roster/group deltas, unread deltas, new
+  // messages, and typing. REST still owns one-shot reads and every mutation
+  // (register/login, send, join/leave, mark-read) — this connection is
+  // receive-mostly, the server pushing state the client didn't ask for yet.
   useEffect(() => {
-    const clientId = state.currentUser?.id;
-    if (!clientId) return;
+    const userId = state.currentUser?.id;
+    const token = getToken();
+    if (!userId || !token) return;
+    const clientId: string = userId;
 
     let cancelled = false;
+    const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
-    api.heartbeat().catch(() => {});
-    const heartbeatTimer = setInterval(() => {
-      api.heartbeat().catch(() => {});
-    }, HEARTBEAT_INTERVAL_MS);
-
-    async function pollClients() {
-      try {
-        const clients = await api.listClients();
-        if (cancelled) return;
-        dispatch({
-          type: "SET_CLIENTS",
-          clients: clients.map((c) => ({ ...c, isSelf: c.id === clientId })),
-        });
-      } catch {
-        // transient poll failure — retry next tick
-      }
-    }
-    pollClients();
-    const clientsTimer = setInterval(pollClients, CLIENTS_POLL_INTERVAL_MS);
-
-    async function pollGroups() {
-      try {
-        const groups = await api.listGroups();
+    // Run on mount and again after every reconnect — a dropped connection
+    // has no sequence numbers to resume from, so the only sound way to
+    // catch up on whatever happened during the gap is to re-pull a fresh
+    // snapshot instead of trusting the stream picked up where it left off.
+    const syncSnapshot = () => {
+      api
+        .listClients()
+        .then((clients) => {
+          if (!cancelled) {
+            dispatch({
+              type: "SET_CLIENTS",
+              clients: clients.map((c) => ({ ...c, isSelf: c.id === clientId })),
+            });
+          }
+        })
+        .catch(() => {});
+      api.listGroups().then((groups) => {
         if (!cancelled) dispatch({ type: "SET_GROUPS", groups });
-      } catch {
-        // transient poll failure — retry next tick
-      }
-    }
-    pollGroups();
-    const groupsTimer = setInterval(pollGroups, GROUPS_POLL_INTERVAL_MS);
-
-    async function pollUnread() {
-      try {
-        const unreadCounts = await api.getUnreadCounts();
+      }).catch(() => {});
+      api.getUnreadCounts().then((unreadCounts) => {
         if (!cancelled) dispatch({ type: "SET_UNREAD", unreadCounts });
-      } catch {
-        // transient poll failure — retry next tick
+      }).catch(() => {});
+      if (activeRoomIdRef.current) {
+        const roomId = activeRoomIdRef.current;
+        api.getMessages(roomId).then(({ messages }) => {
+          if (cancelled) return;
+          dispatch({
+            type: "MERGE_MESSAGES",
+            roomId,
+            messages: messages.map((m) => toMessage(m, clientId)),
+          });
+        }).catch(() => {});
       }
-    }
-    pollUnread();
-    const unreadTimer = setInterval(pollUnread, UNREAD_POLL_INTERVAL_MS);
+    };
+    syncSnapshot();
+
+    const socket = new ChatSocket(token);
+    socketRef.current = socket;
+
+    const unsubscribers = [
+      socket.on("open", syncSnapshot),
+      socket.on("client", (payload) => {
+        dispatch({ type: "UPSERT_CLIENT", client: payload as Client });
+      }),
+      socket.on("presence", (payload) => {
+        const { clientId: id, online } = payload as { clientId: string; online: boolean };
+        dispatch({ type: "PATCH_CLIENT", clientId: id, online });
+      }),
+      socket.on("group", (payload) => {
+        dispatch({ type: "UPSERT_GROUP", group: payload as Group });
+      }),
+      socket.on("groupDeleted", (payload) => {
+        const { groupId } = payload as { groupId: string };
+        dispatch({ type: "REMOVE_GROUP", groupId });
+      }),
+      socket.on("message", (payload) => {
+        const message = payload as ApiMessage;
+        dispatch({
+          type: "MERGE_MESSAGES",
+          roomId: message.roomId,
+          messages: [toMessage(message, clientId)],
+        });
+      }),
+      socket.on("unread", (payload) => {
+        const { roomId, count } = payload as { roomId: string; count: number };
+        if (roomId === activeRoomIdRef.current) {
+          api.markRead(roomId).catch(() => {});
+          return;
+        }
+        dispatch({ type: "PATCH_UNREAD", roomId, count });
+      }),
+      socket.on("typing", (payload) => {
+        const { roomId, typing } = payload as { roomId: string; typing: boolean };
+        dispatch({ type: "SET_TYPING", roomId, typing });
+
+        const pending = typingTimeouts.get(roomId);
+        if (pending) clearTimeout(pending);
+        if (typing) {
+          typingTimeouts.set(
+            roomId,
+            setTimeout(() => dispatch({ type: "SET_TYPING", roomId, typing: false }), TYPING_EXPIRY_MS),
+          );
+        } else {
+          typingTimeouts.delete(roomId);
+        }
+      }),
+    ];
 
     return () => {
       cancelled = true;
-      clearInterval(heartbeatTimer);
-      clearInterval(clientsTimer);
-      clearInterval(groupsTimer);
-      clearInterval(unreadTimer);
+      for (const unsubscribe of unsubscribers) unsubscribe();
+      for (const timeout of typingTimeouts.values()) clearTimeout(timeout);
+      socket.close();
+      socketRef.current = null;
     };
   }, [state.currentUser?.id]);
 
-  // Active-room polling: message history tail + typing indicator.
+  // One-shot history fetch for whatever room just became active — new
+  // messages after this point arrive over the socket above, no re-fetch loop.
   useEffect(() => {
     const userId = state.currentUser?.id;
     const activeRoomId = state.activeRoomId;
     if (!userId || !activeRoomId) return;
-    const clientId: string = userId;
-    const roomId: string = activeRoomId;
+    // The Chatbot room is a frontend-only stub — no backend to read from yet.
+    if (activeRoomId === privateRoomId(CHATBOT_CLIENT_ID)) return;
 
     let cancelled = false;
-    let lastTimestamp = 0;
-
-    async function loadInitial() {
-      try {
-        const { messages } = await api.getMessages(roomId);
+    api
+      .getMessages(activeRoomId)
+      .then(({ messages }) => {
         if (cancelled) return;
-        const mapped = messages.map((m) => toMessage(m, clientId));
-        dispatch({ type: "MERGE_MESSAGES", roomId, messages: mapped });
-        lastTimestamp = mapped.length ? mapped[mapped.length - 1].timestamp : Date.now() - 1;
-      } catch {
-        lastTimestamp = Date.now() - 1;
-      }
-    }
-
-    async function pollRoom() {
-      try {
-        const [{ messages }, typers] = await Promise.all([
-          api.getMessages(roomId, { after: lastTimestamp }),
-          api.getTyping(roomId),
-        ]);
-        if (cancelled) return;
-        if (messages.length > 0) {
-          const mapped = messages.map((m) => toMessage(m, clientId));
-          dispatch({ type: "MERGE_MESSAGES", roomId, messages: mapped });
-          lastTimestamp = mapped[mapped.length - 1].timestamp;
-        }
-        dispatch({ type: "SET_TYPING", roomId, typing: typers.length > 0 });
-      } catch {
-        // transient poll failure — retry next tick
-      }
-    }
-
-    loadInitial().then(() => {
-      if (!cancelled) pollRoom();
-    });
-    const timer = setInterval(pollRoom, ROOM_POLL_INTERVAL_MS);
+        dispatch({
+          type: "MERGE_MESSAGES",
+          roomId: activeRoomId,
+          messages: messages.map((m) => toMessage(m, userId)),
+        });
+      })
+      .catch(() => {});
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
     };
   }, [state.currentUser?.id, state.activeRoomId]);
 
@@ -438,7 +559,8 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
   const value: ChatStoreValue = {
     ...state,
     rooms,
-    join,
+    register,
+    login,
     logout,
     createGroup,
     joinGroup,

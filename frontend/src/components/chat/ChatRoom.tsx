@@ -13,8 +13,16 @@ interface ChatRoomProps {
 }
 
 export function ChatRoom({ roomId }: ChatRoomProps) {
-  const { clients, groups, messagesByRoom, typingRoomIds, sendMessage, leaveGroup, setTyping } =
-    useChatStore();
+  const {
+    clients,
+    groups,
+    messagesByRoom,
+    typingRoomIds,
+    unreadDividers,
+    sendMessage,
+    leaveGroup,
+    setTyping,
+  } = useChatStore();
   const [membersOpen, setMembersOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
 
@@ -80,6 +88,7 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
         messages={messages}
         kind={meta.kind}
         typing={isTyping ? typingName : null}
+        unreadCount={unreadDividers[roomId] ?? 0}
       />
 
       <MessageInput
