@@ -7,9 +7,9 @@ export const clientRepository = {
     });
   },
 
-  create(name: string) {
+  create(name: string, passwordHash: string) {
     return prisma.client.create({
-      data: { name, online: true, lastSeenAt: new Date() },
+      data: { name, passwordHash, online: true, lastSeenAt: new Date() },
     });
   },
 

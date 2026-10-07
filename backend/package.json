@@ -17,6 +17,7 @@
   "dependencies": {
     "@prisma/client": "^6.1.0",
     "@scalar/express-api-reference": "^0.10.27",
+    "bcryptjs": "^3.0.3",
     "express": "^4.21.2",
     "js-yaml": "^5.4.3",
     "prisma": "^6.1.0",

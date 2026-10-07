@@ -10,6 +10,7 @@ datasource db {
 model Client {
   id         String   @id @default(uuid())
   name       String   @unique
+  passwordHash String?
   online     Boolean  @default(false)
   lastSeenAt DateTime @default(now())
   createdAt  DateTime @default(now())
