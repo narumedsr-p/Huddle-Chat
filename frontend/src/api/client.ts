@@ -8,6 +8,14 @@ export function setToken(next: string | null) {
   else sessionStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
+export function hasToken(): boolean {
+  return token !== null;
+}
+
+export function getToken(): string | null {
+  return token;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
