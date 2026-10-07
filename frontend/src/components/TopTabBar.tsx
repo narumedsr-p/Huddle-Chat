@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Hash, User as UserIcon, X } from "lucide-react";
+import { formatUnreadCount } from "../lib/unread";
 import { useChatStore } from "../state/useChatStore";
 
 export function TopTabBar() {
-  const { rooms, activeRoomId, setActiveRoom, closeRoom } = useChatStore();
+  const { rooms, activeRoomId, unreadCounts, setActiveRoom, closeRoom } = useChatStore();
 
   if (rooms.length === 0) return null;
 
@@ -12,6 +13,7 @@ export function TopTabBar() {
       <AnimatePresence initial={false}>
         {rooms.map((room) => {
           const isActive = room.id === activeRoomId;
+          const unread = unreadCounts[room.id] ?? 0;
           return (
             <motion.div
               key={room.id}
@@ -45,6 +47,11 @@ export function TopTabBar() {
                 )}
               </span>
               <span className="truncate">{room.name}</span>
+              {unread > 0 && (
+                <span className="shrink-0 rounded-full bg-gold-400 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-brown-900">
+                  {formatUnreadCount(unread)}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={(e) => {
