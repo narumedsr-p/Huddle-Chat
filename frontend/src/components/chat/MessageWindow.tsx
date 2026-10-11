@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatUnreadCount } from "../../lib/unread";
 import type { Message, RoomKind } from "../../types";
 import { MessageBubble } from "./MessageBubble";
@@ -90,8 +90,20 @@ function TypingIndicator({ name }: { name: string }) {
 
 export function MessageWindow({ messages, kind, typing, unreadCount = 0 }: MessageWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const unreadStartIndex =
-    unreadCount > 0 ? Math.max(messages.length - unreadCount, 0) : -1;
+
+  // Anchor the divider to a fixed position the first time enough history has
+  // loaded to place it, then freeze it there — recomputing from messages.length
+  // on every render would keep shoving it toward the bottom as new messages
+  // (sent or received) get appended during the same room visit.
+  const [anchor, setAnchor] = useState({ unreadCount, index: -1 });
+  if (anchor.unreadCount !== unreadCount) {
+    setAnchor({ unreadCount, index: -1 });
+  }
+  if (anchor.index === -1 && unreadCount > 0) {
+    const candidate = messages.length - unreadCount;
+    if (candidate >= 0) setAnchor({ unreadCount, index: candidate });
+  }
+  const unreadStartIndex = unreadCount > 0 ? anchor.index : -1;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
