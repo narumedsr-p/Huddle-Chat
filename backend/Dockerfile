@@ -19,6 +19,7 @@ RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
+COPY src ./src
 COPY openapi.yaml ./openapi.yaml
 
 EXPOSE 4000
