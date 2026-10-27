@@ -1,7 +1,11 @@
 services:
   frontend:
-    ports:
-      - "443:443"
-    volumes:
-      - ./certs:/etc/nginx/certs:ro
-      - ./frontend/nginx-ssl.conf:/etc/nginx/conf.d/ssl.conf:ro
+    networks:
+      default: {}
+      edge:
+        aliases:
+          - huddle-frontend
+
+networks:
+  edge:
+    external: true
