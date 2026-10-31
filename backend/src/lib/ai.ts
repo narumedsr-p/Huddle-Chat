@@ -6,18 +6,30 @@ const client = new OpenAI({
     baseURL: "https://api.groq.com/openai/v1"
 })
 
+// The provider's error (key, quota, ...) stays in the server log; callers only get a safe AppError.
+function toAIError(err : unknown) {
+    console.error(err)
+    if (err instanceof OpenAI.APIError && err.status === 429) {
+        return new AppError(429, "AI_RATE_LIMITED", "The AI is busy, please try again in a moment.")
+    }
+    return new AppError(502, "AI_UNAVAILABLE", "The AI service failed, please try again.")
+}
 
 // Groq infers the format from the file extension, so derive it from the blob's mime type.
 // originalname must carry the audio extension (e.g. "audio.webm"): Groq infers the format from it.
 export async function speechToText(file : File) {
 
-    const { text } = await client.audio.transcriptions.create({
-        file,
-        model: "whisper-large-v3",
-        prompt: "Huddle Chat"
-    })
+    try {
+        const { text } = await client.audio.transcriptions.create({
+            file,
+            model: "whisper-large-v3",
+            prompt: "Huddle Chat"
+        })
 
-    return text
+        return text
+    } catch (err) {
+        throw toAIError(err)
+    }
 }
 
 export type ChatMessage = { role: "user" | "assistant", content: string }
@@ -98,15 +110,20 @@ async function complete(
         responseFormat 
     } : CompleteOptions = {}) {
 
-    const completion = await client.chat.completions.create({
-        model: "openai/gpt-oss-120b",
-        messages: [{ role: "system", content: system }, ...messages],
-        tools,
-        max_completion_tokens: 2048,
-        reasoning_effort: reasoningEffort,
-        response_format: responseFormat,
-        temperature
-    })
+    let completion : OpenAI.Chat.ChatCompletion
+    try {
+        completion = await client.chat.completions.create({
+            model: "openai/gpt-oss-120b",
+            messages: [{ role: "system", content: system }, ...messages],
+            tools,
+            max_completion_tokens: 2048,
+            reasoning_effort: reasoningEffort,
+            response_format: responseFormat,
+            temperature
+        })
+    } catch (err) {
+        throw toAIError(err)
+    }
 
     // browser_search leaves raw citation markers like 【1†L5-L8】 in the text
     return (completion.choices[0]?.message.content ?? "").replace(/【[^】]*】/g, "").trim()
