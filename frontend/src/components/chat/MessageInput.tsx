@@ -1,5 +1,6 @@
 import { Mic, Send } from "lucide-react";
 import { useRef, useState } from "react";
+import { api } from "../../api";
 import { useVoiceRecorder } from "../../lib/useVoiceRecorder";
 import { Button } from "../ui/Button";
 
@@ -13,8 +14,15 @@ const TYPING_REPORT_THROTTLE_MS = 3000;
 export function MessageInput({ onSend, onTyping }: MessageInputProps) {
   const [text, setText] = useState("");
   const lastTypingSentAt = useRef(0);
-  const { recording, start, stop } = useVoiceRecorder((audio) => {
-    console.log("voice recording", audio.type, audio.size);
+  const { recording, start, stop } = useVoiceRecorder(async (audio) => {
+    try {
+      const { text: spoken } = await api.speechToText(audio);
+      if (!spoken) return;
+      setText((current) => (current.trim() ? `${current.trimEnd()} ${spoken}` : spoken));
+      reportTyping(true);
+    } catch (err) {
+      console.error(err);
+    }
   });
 
   function reportTyping(isTyping: boolean) {
@@ -62,7 +70,7 @@ export function MessageInput({ onSend, onTyping }: MessageInputProps) {
         onClick={recording ? stop : start}
         aria-label={recording ? "Stop voice input" : "Voice input"}
         aria-pressed={recording}
-        title="Voice input (coming soon)"
+        title="Voice input"
         className="h-11 shrink-0"
       >
         <Mic className="h-4 w-4" />
