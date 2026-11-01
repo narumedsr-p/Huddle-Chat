@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
-import { AUDIO_EXTENSIONS, speechToText } from "../lib/ai";
+import { speechToText } from "../lib/ai";
 import { AppError } from "../lib/errors";
+import { AUDIO_EXTENSIONS } from "../middleware/audioUpload";
 
 export const aiController = {
   async speechToText(req: Request, res: Response) {
