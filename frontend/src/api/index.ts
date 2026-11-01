@@ -2,14 +2,16 @@ import * as auth from "./auth";
 import * as clients from "./clients";
 import * as groups from "./groups";
 import * as rooms from "./rooms";
-import * as chatbot from "./chatbot"
+import * as chatbot from "./chatbot";
+import * as search from "./search";
 
 export const api = {
   ...auth,
   ...clients,
   ...groups,
   ...rooms,
-  ...chatbot
+  ...chatbot,
+  ...search,
 };
 
 export { ApiError, hasToken, getToken } from "./client";

@@ -11,6 +11,7 @@ interface MessageWindowProps {
   typing?: string | null;
   /** Number of trailing messages that were unread when this room was opened. */
   unreadCount?: number;
+  highlightedMessageId?: string | null;
 }
 
 function isSameDay(a: number, b: number) {
@@ -88,7 +89,13 @@ function TypingIndicator({ name }: { name: string }) {
   );
 }
 
-export function MessageWindow({ messages, kind, typing, unreadCount = 0 }: MessageWindowProps) {
+export function MessageWindow({
+  messages,
+  kind,
+  typing,
+  unreadCount = 0,
+  highlightedMessageId,
+}: MessageWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Anchor the divider to a fixed position the first time enough history has
@@ -106,8 +113,17 @@ export function MessageWindow({ messages, kind, typing, unreadCount = 0 }: Messa
   const unreadStartIndex = unreadCount > 0 ? anchor.index : -1;
 
   useEffect(() => {
+    if (highlightedMessageId) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, typing]);
+  }, [messages.length, typing, highlightedMessageId]);
+
+  useEffect(() => {
+    if (!highlightedMessageId) return;
+    const el = document.getElementById(`msg-${highlightedMessageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightedMessageId]);
 
   return (
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-5">
@@ -115,8 +131,17 @@ export function MessageWindow({ messages, kind, typing, unreadCount = 0 }: Messa
         {messages.map((message, i) => {
           const prev = messages[i - 1];
           const showDate = !prev || !isSameDay(prev.timestamp, message.timestamp);
+          const isHighlighted = message.id === highlightedMessageId;
           return (
-            <div key={message.id}>
+            <div
+              key={message.id}
+              id={`msg-${message.id}`}
+              className={`rounded-2xl transition-all duration-500 ${
+                isHighlighted
+                  ? "ring-4 ring-gold-400/80 bg-gold-100/40 p-1 -m-1"
+                  : ""
+              }`}
+            >
               {showDate && <DateSeparator label={formatDateLabel(message.timestamp)} />}
               {i === unreadStartIndex && (
                 <>

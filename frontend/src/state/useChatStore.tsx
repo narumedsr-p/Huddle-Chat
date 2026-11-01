@@ -249,6 +249,7 @@ interface ChatStoreValue extends State {
   setActiveRoom: (roomId: string) => void;
   sendMessage: (roomId: string, text: string) => void;
   setTyping: (roomId: string, typing: boolean) => void;
+  ensureMessage: (roomId: string, message: ApiMessage) => void;
 }
 
 const ChatStoreContext = createContext<ChatStoreValue | null>(null);
@@ -405,6 +406,19 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
     // a dropped update isn't worth the cost of a retransmit.
     socketRef.current?.send("typing", { roomId, typing });
   }, []);
+
+  const ensureMessage = useCallback(
+    (roomId: string, message: ApiMessage) => {
+      const selfId = state.currentUser?.id;
+      if (!selfId) return;
+      dispatch({
+        type: "MERGE_MESSAGES",
+        roomId,
+        messages: [toMessage(message, selfId)],
+      });
+    },
+    [state.currentUser?.id],
+  );
 
   // One socket per login, carrying every push the old poll loops used to
   // fetch separately: presence, roster/group deltas, unread deltas, new
@@ -568,6 +582,7 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
     setActiveRoom,
     sendMessage,
     setTyping,
+    ensureMessage,
   };
 
   return (
