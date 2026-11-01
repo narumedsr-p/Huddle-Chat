@@ -29,6 +29,12 @@ export const roomsController = {
     res.status(201).json(message);
   },
 
+  async summarize(req: Request, res: Response) {
+    const authed = req as AuthedRequest;
+    const summary = await messageService.summarize(decodeRoomId(req), authed.client.id);
+    res.json({ summary });
+  },
+
   async markRead(req: Request, res: Response) {
     const authed = req as AuthedRequest;
     const roomId = decodeRoomId(req);
