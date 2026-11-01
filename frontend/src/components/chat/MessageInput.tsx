@@ -1,5 +1,6 @@
 import { Mic, Send } from "lucide-react";
 import { useRef, useState } from "react";
+import { useVoiceRecorder } from "../../lib/useVoiceRecorder";
 import { Button } from "../ui/Button";
 
 interface MessageInputProps {
@@ -12,9 +13,9 @@ const TYPING_REPORT_THROTTLE_MS = 3000;
 export function MessageInput({ onSend, onTyping }: MessageInputProps) {
   const [text, setText] = useState("");
   const lastTypingSentAt = useRef(0);
-  // UI stub for a future speech-to-text feature — not wired to anything yet,
-  // just toggles the mic's active look.
-  const [recording, setRecording] = useState(false);
+  const { recording, start, stop } = useVoiceRecorder((audio) => {
+    console.log("voice recording", audio.type, audio.size);
+  });
 
   function reportTyping(isTyping: boolean) {
     if (!onTyping) return;
@@ -58,7 +59,7 @@ export function MessageInput({ onSend, onTyping }: MessageInputProps) {
       <Button
         type="button"
         variant={recording ? "danger" : "secondary"}
-        onClick={() => setRecording((r) => !r)}
+        onClick={recording ? stop : start}
         aria-label={recording ? "Stop voice input" : "Voice input"}
         aria-pressed={recording}
         title="Voice input (coming soon)"
