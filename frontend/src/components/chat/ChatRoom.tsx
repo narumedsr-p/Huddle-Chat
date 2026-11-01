@@ -1,9 +1,11 @@
-import { DoorOpen, Hash, User as UserIcon, Users } from "lucide-react";
+import { DoorOpen, Hash, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
+import { api } from "../../api";
 import { CHATBOT_CLIENT_ID } from "../../lib/chatbot";
 import { roomMeta, useChatStore } from "../../state/useChatStore";
 import { GroupMembersModal } from "../GroupMembersModal";
 import { ConfirmModal } from "../ui/ConfirmModal";
+import { Modal } from "../ui/Modal";
 import { ChatbotRoom } from "./ChatbotRoom";
 import { MessageInput } from "./MessageInput";
 import { MessageWindow } from "./MessageWindow";
@@ -25,6 +27,7 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   } = useChatStore();
   const [membersOpen, setMembersOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
 
   const meta = roomMeta(roomId, clients, groups);
   if (!meta) return null;
@@ -43,6 +46,15 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
         .filter((c): c is (typeof clients)[number] => !!c)
     : [];
 
+  async function summarize() {
+    try {
+      const result = await api.summarizeRoom(roomId);
+      setSummary(result.summary);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-brown-100 bg-white/70 px-6 py-4">
@@ -60,8 +72,18 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
           )}
         </h2>
 
+        <button
+          type="button"
+          onClick={summarize}
+          className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-brown-500 transition hover:bg-brown-50 hover:text-brown-700"
+          aria-label="Summarize chat"
+          title="Summarize chat"
+        >
+          <Sparkles className="h-4 w-4" />
+        </button>
+
         {group && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setMembersOpen(true)}
@@ -95,6 +117,10 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
         onSend={(text) => sendMessage(roomId, text)}
         onTyping={(typing) => setTyping(roomId, typing)}
       />
+
+      <Modal open={summary !== null} onClose={() => setSummary(null)} title="Chat summary">
+        <p className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm text-ink">{summary}</p>
+      </Modal>
 
       {group && (
         <>
