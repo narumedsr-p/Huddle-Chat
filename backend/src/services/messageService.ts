@@ -1,3 +1,4 @@
+import { summarizeChat } from "../lib/ai";
 import { AppError } from "../lib/errors";
 import { groupRoomKey, parseRoomId, privateRoomKey } from "../lib/roomId";
 import { clientRepository } from "../repositories/clientRepository";
@@ -8,6 +9,7 @@ import { readStateService } from "./readStateService";
 
 const DEFAULT_PAGE_LIMIT = 50;
 const MAX_POLL_LIMIT = 200;
+const SUMMARY_LIMIT = 200;
 
 interface MessageRow {
   id: string;
@@ -43,11 +45,15 @@ async function resolveRoom(roomId: string, callerId: string) {
 }
 
 export const messageService = {
-  async list(roomId: string, callerId: string, opts: { before?: number; after?: number }) {
+  async list(
+    roomId: string,
+    callerId: string,
+    opts: { before?: number; after?: number; limit?: number },
+  ) {
     const ref = await resolveRoom(roomId, callerId);
     const before = opts.before ? new Date(opts.before) : undefined;
     const after = opts.after ? new Date(opts.after) : undefined;
-    const limit = after ? MAX_POLL_LIMIT : DEFAULT_PAGE_LIMIT;
+    const limit = opts.limit ?? (after ? MAX_POLL_LIMIT : DEFAULT_PAGE_LIMIT);
 
     const rows =
       ref.kind === "group"
@@ -61,6 +67,16 @@ export const messageService = {
     const ordered = after ? rows : [...rows].reverse();
     const hasMore = !after && rows.length === limit;
     return { messages: ordered.map((m) => toDto(m, roomId)), hasMore };
+  },
+
+  async summarize(roomId: string, callerId: string): Promise<string> {
+    const { messages } = await messageService.list(roomId, callerId, { limit: SUMMARY_LIMIT });
+    if (messages.length === 0) {
+      throw new AppError(400, "NOTHING_TO_SUMMARIZE", "There are no messages to summarize yet.");
+    }
+    return summarizeChat(
+      messages.map((m) => ({ role: "user", name: m.senderName, content: m.text })),
+    );
   },
 
   async send(roomId: string, callerId: string, rawText: string) {
