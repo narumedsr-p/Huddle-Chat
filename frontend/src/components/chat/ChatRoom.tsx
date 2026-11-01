@@ -1,6 +1,6 @@
-import { DoorOpen, Hash, Sparkles, User as UserIcon, Users } from "lucide-react";
+import { DoorOpen, Hash, Loader2, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
-import { api } from "../../api";
+import { api, ApiError } from "../../api";
 import { CHATBOT_CLIENT_ID } from "../../lib/chatbot";
 import { roomMeta, useChatStore } from "../../state/useChatStore";
 import { GroupMembersModal } from "../GroupMembersModal";
@@ -13,6 +13,11 @@ import { MessageWindow } from "./MessageWindow";
 interface ChatRoomProps {
   roomId: string;
 }
+
+type SummaryState =
+  | { status: "loading" }
+  | { status: "done"; text: string }
+  | { status: "error"; message: string };
 
 export function ChatRoom({ roomId }: ChatRoomProps) {
   const {
@@ -27,7 +32,7 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   } = useChatStore();
   const [membersOpen, setMembersOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
+  const [summary, setSummary] = useState<SummaryState | null>(null);
 
   const meta = roomMeta(roomId, clients, groups);
   if (!meta) return null;
@@ -47,11 +52,13 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
     : [];
 
   async function summarize() {
+    setSummary({ status: "loading" });
     try {
       const result = await api.summarizeRoom(roomId);
-      setSummary(result.summary);
+      setSummary((current) => current && { status: "done", text: result.summary });
     } catch (err) {
-      console.error(err);
+      const message = err instanceof ApiError ? err.message : "Couldn't summarize this chat.";
+      setSummary((current) => current && { status: "error", message });
     }
   }
 
@@ -119,7 +126,22 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
       />
 
       <Modal open={summary !== null} onClose={() => setSummary(null)} title="Chat summary">
-        <p className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm text-ink">{summary}</p>
+        {summary?.status === "loading" && (
+          <p role="status" className="flex items-center gap-2 text-sm text-ink-soft">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Summarizing…
+          </p>
+        )}
+        {summary?.status === "error" && (
+          <p role="alert" className="text-sm font-medium text-red-500">
+            {summary.message}
+          </p>
+        )}
+        {summary?.status === "done" && (
+          <p className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm text-ink">
+            {summary.text}
+          </p>
+        )}
       </Modal>
 
       {group && (
