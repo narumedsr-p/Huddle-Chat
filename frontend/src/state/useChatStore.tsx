@@ -347,8 +347,7 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
     const roomId = privateRoomId(clientId);
     dispatch({ type: "OPEN_ROOM", roomId });
     dispatch({ type: "SET_ACTIVE", roomId });
-    // The Chatbot room is a frontend-only stub — no backend to mark read yet.
-    if (clientId !== CHATBOT_CLIENT_ID) api.markRead(roomId).catch(() => {});
+    api.markRead(roomId).catch(() => {});
   }, []);
 
   const openGroupRoom = useCallback((groupId: string) => {
@@ -524,8 +523,6 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
     const userId = state.currentUser?.id;
     const activeRoomId = state.activeRoomId;
     if (!userId || !activeRoomId) return;
-    // The Chatbot room is a frontend-only stub — no backend to read from yet.
-    if (activeRoomId === privateRoomId(CHATBOT_CLIENT_ID)) return;
 
     let cancelled = false;
     api

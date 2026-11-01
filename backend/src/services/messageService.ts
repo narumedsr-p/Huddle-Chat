@@ -6,6 +6,9 @@ import { messageRepository } from "../repositories/messageRepository";
 import { hub } from "../ws/hub";
 import { readStateService } from "./readStateService";
 
+// ✨ นำเข้า chatService (เช็คชื่อไฟล์ของคุณด้วยนะครับ ถ้าไฟล์ชื่อ chatbotService.ts ให้ import ตามนี้)
+import { chatService } from "./chatbotService";
+
 const DEFAULT_PAGE_LIMIT = 50;
 const MAX_POLL_LIMIT = 200;
 
@@ -83,13 +86,30 @@ export const messageService = {
         hub.sendTo(member.clientId, "unread", { roomId: sharedRoomId, count });
       }
     } else {
-      // Each side names this conversation after the other person, so the
-      // payload sent to A and the one sent to B carry different roomIds for
-      // what's otherwise the same event.
+      // แต่ละฝ่ายจะเรียกชื่อห้องสนทนาเป็นชื่อของอีกฝ่าย
       hub.sendTo(callerId, "message", dto);
       hub.sendTo(ref.otherClientId, "message", { ...dto, roomId: privateRoomKey(callerId) });
       const count = await readStateService.unreadCountForPrivate(ref.otherClientId, callerId);
       hub.sendTo(ref.otherClientId, "unread", { roomId: privateRoomKey(callerId), count });
+
+      // ✨✨✨ ส่วนที่เพิ่มใหม่สำหรับ AI Chatbot ✨✨✨
+      if (ref.otherClientId === "chatbot") {
+        chatService.replyFromBot(callerId, text)
+          .then(async (botRow) => {
+            const botDto = toDto(botRow, privateRoomKey("chatbot"));
+            
+            // ส่งข้อความจาก AI กลับไปที่ผู้ใช้
+            hub.sendTo(callerId, "message", botDto);
+            
+            // อัปเดตตัวเลขแจ้งเตือน (Unread) ให้ผู้ใช้
+            const botUnreadCount = await readStateService.unreadCountForPrivate(callerId, "chatbot");
+            hub.sendTo(callerId, "unread", { roomId: privateRoomKey("chatbot"), count: botUnreadCount });
+          })
+          .catch((err) => {
+            console.error("Chatbot Error:", err);
+          });
+      }
+      // ✨✨✨ จบส่วนของ AI ✨✨✨
     }
 
     return dto;

@@ -8,6 +8,7 @@ const prisma = new PrismaClient();
 const DEV_PASSWORD = "Password123!";
 
 const FEATURED: { name: string; online: boolean }[] = [
+  { name: "Chatbot", online: true },
   { name: "Nara", online: true },
   { name: "Ploy", online: true },
   { name: "Tar", online: true },
@@ -51,7 +52,7 @@ async function main() {
     const client = await prisma.client.upsert({
       where: { name },
       update: { online, passwordHash },
-      create: { name, online, passwordHash },
+      create: { id: name === "Chatbot" ? "chatbot" : undefined, name, online, passwordHash },
     });
     clientIdByName.set(name, client.id);
   }
