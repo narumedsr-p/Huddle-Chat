@@ -58,7 +58,7 @@ export function useVoiceRecorder(onRecorded: (audio: Blob) => void) {
       setRecording(true);
     } catch (err) {
       if (stream) releaseMic(stream);
-      console.error(err);
+      throw err;
     } finally {
       startingRef.current = false;
     }
