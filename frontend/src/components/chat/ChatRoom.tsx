@@ -29,7 +29,7 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   const meta = roomMeta(roomId, clients, groups);
   if (!meta) return null;
   if (meta.kind === "private" && meta.refId === CHATBOT_CLIENT_ID) {
-    return <ChatbotRoom />;
+    return <ChatbotRoom roomId={roomId} />;
   }
 
   const messages = messagesByRoom[roomId] ?? [];

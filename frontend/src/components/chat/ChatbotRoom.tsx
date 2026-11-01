@@ -1,39 +1,23 @@
 import { Bot } from "lucide-react";
-import { useState } from "react";
-import type { Message } from "../../types";
 import { MessageInput } from "./MessageInput";
 import { MessageWindow } from "./MessageWindow";
+import { useChatStore } from "../../state/useChatStore"; 
 
-const WELCOME_MESSAGE: Message = {
-  id: "chatbot-welcome",
-  roomId: "private:chatbot",
-  senderId: "chatbot",
-  senderName: "Chatbot",
-  text: "Hi! I'm a placeholder for a future AI assistant — I can't reply yet.",
-  timestamp: Date.now(),
-  isSelf: false,
-};
+interface ChatbotRoomProps {
+  roomId?: string;
+}
 
-// Frontend-only stub: messages here are kept in local state and never hit
-// the backend, since there's no AI wired up yet.
-export function ChatbotRoom() {
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+export function ChatbotRoom({ roomId = "private:chatbot" }: ChatbotRoomProps) {
+  const { messagesByRoom, sendMessage, unreadDividers, setTyping, typingRoomIds } = useChatStore();
+  
+  const messages = messagesByRoom[roomId] ?? [];
+  const isTyping = !!typingRoomIds[roomId];
 
-  function handleSend(text: string) {
+  async function handleSend(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `local-${Date.now()}`,
-        roomId: "private:chatbot",
-        senderId: "me",
-        senderName: "You",
-        text: trimmed,
-        timestamp: Date.now(),
-        isSelf: true,
-      },
-    ]);
+    
+    sendMessage(roomId, trimmed);
   }
 
   return (
@@ -43,9 +27,16 @@ export function ChatbotRoom() {
         <h2 className="truncate text-sm font-semibold text-ink">Chatbot</h2>
       </div>
 
-      <MessageWindow messages={messages} kind="private" />
-
-      <MessageInput onSend={handleSend} />
+      <MessageWindow 
+        messages={messages} 
+        kind="private" 
+        typing={isTyping ? "Chatbot" : null}
+        unreadCount={unreadDividers[roomId] ?? 0}
+      />
+      <MessageInput 
+        onSend={handleSend} 
+        onTyping={(typing) => setTyping(roomId, typing)}
+      />
     </div>
   );
 }

@@ -17,7 +17,6 @@ export function UserPanel() {
   );
   const online = filtered.filter((c) => c.online);
   const offline = filtered.filter((c) => !c.online);
-  const showBot = !query.trim();
 
   function renderClient(client: (typeof clients)[number]) {
     const isSelf = client.id === currentUser?.id;
@@ -69,10 +68,9 @@ export function UserPanel() {
 
       <div>
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-          Online ({online.length + (showBot ? 1 : 0)})
+          Online ({online.length})
         </h2>
         <ul className="flex flex-col gap-1">
-          {showBot && renderClient(CHATBOT_CLIENT)}
           {online.map(renderClient)}
         </ul>
       </div>
