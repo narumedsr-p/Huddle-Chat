@@ -19,6 +19,12 @@ export function sendMessage(roomId: string, text: string): Promise<ApiMessage> {
   });
 }
 
+export function summarizeRoom(roomId: string): Promise<{ summary: string }> {
+  return apiFetch<{ summary: string }>(`/rooms/${encodeURIComponent(roomId)}/summary`, {
+    method: "POST",
+  });
+}
+
 export function markRead(roomId: string): Promise<void> {
   return apiFetch<void>(`/rooms/${encodeURIComponent(roomId)}/read`, { method: "PUT" });
 }
