@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+const AUDIO_MIME_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"];
+
 function releaseMic(stream: MediaStream) {
   stream.getTracks().forEach((track) => track.stop());
 }
@@ -38,7 +40,8 @@ export function useVoiceRecorder(onRecorded: (audio: Blob) => void) {
         return;
       }
 
-      const recorder = new MediaRecorder(stream);
+      const mimeType = AUDIO_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
       recorder.ondataavailable = (event) => {
         chunks.push(event.data);
@@ -47,7 +50,7 @@ export function useVoiceRecorder(onRecorded: (audio: Blob) => void) {
         releaseMic(recorder.stream);
         recorderRef.current = null;
         setRecording(false);
-        onRecordedRef.current(new Blob(chunks, { type: recorder.mimeType }));
+        onRecordedRef.current(new Blob(chunks, { type: mimeType ?? recorder.mimeType }));
       };
 
       recorder.start();
