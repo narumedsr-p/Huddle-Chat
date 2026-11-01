@@ -1,9 +1,11 @@
+import * as ai from "./ai";
 import * as auth from "./auth";
 import * as clients from "./clients";
 import * as groups from "./groups";
 import * as rooms from "./rooms";
 
 export const api = {
+  ...ai,
   ...auth,
   ...clients,
   ...groups,
