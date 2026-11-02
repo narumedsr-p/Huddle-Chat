@@ -8,6 +8,7 @@ import { GroupMembersModal } from "../GroupMembersModal";
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { Modal } from "../ui/Modal";
 import { ChatbotRoom } from "./ChatbotRoom";
+import { ChatMarkdown } from "./ChatMarkdown";
 import { MessageInput } from "./MessageInput";
 import { MessageWindow } from "./MessageWindow";
 import { SearchDrawer } from "./SearchDrawer";
@@ -144,6 +145,7 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col">
           <MessageWindow
+            roomId={roomId}
             messages={messages}
             kind={meta.kind}
             typing={isTyping ? typingName : null}
@@ -179,9 +181,9 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
           </p>
         )}
         {summary?.status === "done" && (
-          <p className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm text-ink">
-            {summary.text}
-          </p>
+          <div className="max-h-96 overflow-y-auto text-sm text-ink">
+            <ChatMarkdown>{summary.text}</ChatMarkdown>
+          </div>
         )}
       </Modal>
 

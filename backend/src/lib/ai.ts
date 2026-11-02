@@ -80,7 +80,8 @@ Accuracy rules:
 
 Format:
 - Write in the language most used in the conversation (Thai or English); if mixed, use Thai.
-- Start with a one or two sentence overview, then short one-line bullets under: key topics, decisions, action items (owner - task - deadline), open questions. Leave out a section that has nothing in it; do not write "none".
+- Start with a one or two sentence overview paragraph (no heading, no bullet).
+- Then, for each of these that has content — key topics, decisions, action items (owner - task - deadline), open questions — write the section name as its own markdown line, e.g. "**Key topics**", directly followed by its "- bullet" lines with no blank line and no empty bullet in between. Leave out a section that has nothing in it; do not write "none".
 - Skip greetings, small talk and repeated messages. Keep it much shorter than the transcript.
 
 Safety:

@@ -31,7 +31,8 @@ export const roomsController = {
 
   async summarize(req: Request, res: Response) {
     const authed = req as AuthedRequest;
-    const summary = await messageService.summarize(decodeRoomId(req), authed.client.id);
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const summary = await messageService.summarize(decodeRoomId(req), authed.client.id, limit);
     res.json({ summary });
   },
 

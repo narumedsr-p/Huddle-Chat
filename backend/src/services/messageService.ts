@@ -72,8 +72,8 @@ export const messageService = {
     return { messages: ordered.map((m) => toDto(m, roomId)), hasMore };
   },
 
-  async summarize(roomId: string, callerId: string): Promise<string> {
-    const { messages } = await messageService.list(roomId, callerId, { limit: SUMMARY_LIMIT });
+  async summarize(roomId: string, callerId: string, limit = SUMMARY_LIMIT): Promise<string> {
+    const { messages } = await messageService.list(roomId, callerId, { limit });
     if (messages.length === 0) {
       throw new AppError(400, "NOTHING_TO_SUMMARIZE", "There are no messages to summarize yet.");
     }

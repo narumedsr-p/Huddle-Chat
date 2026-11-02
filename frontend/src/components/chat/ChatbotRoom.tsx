@@ -67,6 +67,7 @@ export function ChatbotRoom({ roomId = "private:chatbot" }: ChatbotRoomProps) {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col">
           <MessageWindow
+            roomId={roomId}
             messages={messages}
             kind="private"
             typing={isTyping ? "Chatbot" : null}

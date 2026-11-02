@@ -1,11 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { api, ApiError } from "../../api";
 import { formatUnreadCount } from "../../lib/unread";
 import type { Message, RoomKind } from "../../types";
+import { ChatMarkdown } from "./ChatMarkdown";
 import { MessageBubble } from "./MessageBubble";
 
 interface MessageWindowProps {
+  roomId: string;
   messages: Message[];
   kind: RoomKind;
   typing?: string | null;
@@ -56,12 +59,50 @@ function UnreadSeparator({ count }: { count: number }) {
   );
 }
 
-// UI stub for a future AI summary feature — no backend wired up yet.
-function UnreadSummary() {
+type RecapState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; text: string }
+  | { status: "error"; message: string };
+
+function UnreadSummary({ roomId, unreadCount }: { roomId: string; unreadCount: number }) {
+  const [recap, setRecap] = useState<RecapState>({ status: "idle" });
+
+  async function recapWhatYouMissed() {
+    setRecap({ status: "loading" });
+    try {
+      const result = await api.summarizeRoom(roomId, unreadCount);
+      setRecap({ status: "done", text: result.summary });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Couldn't recap this chat.";
+      setRecap({ status: "error", message });
+    }
+  }
+
   return (
     <div className="mx-auto mb-1 flex max-w-sm items-start gap-2 rounded-2xl bg-white/80 px-3.5 py-2.5 text-xs text-ink-soft shadow-pop">
       <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-600" />
-      <span>AI summary coming soon — this'll recap what you missed.</span>
+      {recap.status === "idle" && (
+        <button
+          type="button"
+          onClick={recapWhatYouMissed}
+          className="text-left underline decoration-dotted hover:text-ink"
+        >
+          Recap what you missed
+        </button>
+      )}
+      {recap.status === "loading" && (
+        <span role="status" className="flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Summarizing…
+        </span>
+      )}
+      {recap.status === "error" && <span role="alert">{recap.message}</span>}
+      {recap.status === "done" && (
+        <div className="[&_p]:mb-1">
+          <ChatMarkdown>{recap.text}</ChatMarkdown>
+        </div>
+      )}
     </div>
   );
 }
@@ -90,6 +131,7 @@ function TypingIndicator({ name }: { name: string }) {
 }
 
 export function MessageWindow({
+  roomId,
   messages,
   kind,
   typing,
@@ -146,7 +188,7 @@ export function MessageWindow({
               {i === unreadStartIndex && (
                 <>
                   <UnreadSeparator count={unreadCount} />
-                  <UnreadSummary />
+                  <UnreadSummary roomId={roomId} unreadCount={unreadCount} />
                 </>
               )}
               <MessageBubble message={message} showSender={kind === "group"} />

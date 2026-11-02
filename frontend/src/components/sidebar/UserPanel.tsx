@@ -15,8 +15,10 @@ export function UserPanel() {
     () => clients.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase())),
     [clients, query],
   );
-  const online = filtered.filter((c) => c.online);
-  const offline = filtered.filter((c) => !c.online);
+  const bot = filtered.find((c) => c.id === CHATBOT_CLIENT.id);
+  const rest = filtered.filter((c) => c.id !== CHATBOT_CLIENT.id);
+  const online = rest.filter((c) => c.online);
+  const offline = rest.filter((c) => !c.online);
 
   function renderClient(client: (typeof clients)[number]) {
     const isSelf = client.id === currentUser?.id;
@@ -65,6 +67,8 @@ export function UserPanel() {
   return (
     <div className="flex flex-col gap-4">
       <SearchInput value={query} onChange={setQuery} placeholder="Search users…" />
+
+      {bot && <ul className="flex flex-col gap-1">{renderClient(bot)}</ul>}
 
       <div>
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">

@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import type { Message } from "../../types";
 import { Avatar } from "../ui/Avatar";
-import Markdown from "react-markdown";
+import { ChatMarkdown } from "./ChatMarkdown";
 
 interface MessageBubbleProps {
   message: Message;
@@ -34,17 +34,7 @@ export function MessageBubble({ message, showSender }: MessageBubbleProps) {
               : "rounded-bl-md bg-white text-ink"
           }`}
         >
-          <Markdown
-            components={{
-              p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-              strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-              ul: ({ children }) => <ul className="mb-2 list-inside list-disc space-y-1">{children}</ul>,
-              ol: ({ children }) => <ol className="mb-2 list-inside list-decimal space-y-1">{children}</ol>,
-              li: ({ children }) => <li>{children}</li>,
-            }}
-          >
-            {message.text}
-          </Markdown>
+          <ChatMarkdown>{message.text}</ChatMarkdown>
         </div>
         <span className="mt-1 px-1 text-[11px] text-ink-soft/70">
           {formatTime(message.timestamp)}

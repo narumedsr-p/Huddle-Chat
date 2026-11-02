@@ -19,8 +19,9 @@ export function sendMessage(roomId: string, text: string): Promise<ApiMessage> {
   });
 }
 
-export function summarizeRoom(roomId: string): Promise<{ summary: string }> {
-  return apiFetch<{ summary: string }>(`/rooms/${encodeURIComponent(roomId)}/summary`, {
+export function summarizeRoom(roomId: string, limit?: number): Promise<{ summary: string }> {
+  const qs = limit ? `?limit=${limit}` : "";
+  return apiFetch<{ summary: string }>(`/rooms/${encodeURIComponent(roomId)}/summary${qs}`, {
     method: "POST",
   });
 }
