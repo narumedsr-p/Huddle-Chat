@@ -1,10 +1,12 @@
-import { DoorOpen, Hash, Search, User as UserIcon, Users } from "lucide-react";
+import { DoorOpen, Hash, Loader2, Search, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
+import { api, ApiError } from "../../api";
 import type { ApiMessage } from "../../api";
 import { CHATBOT_CLIENT_ID } from "../../lib/chatbot";
 import { roomMeta, useChatStore } from "../../state/useChatStore";
 import { GroupMembersModal } from "../GroupMembersModal";
 import { ConfirmModal } from "../ui/ConfirmModal";
+import { Modal } from "../ui/Modal";
 import { ChatbotRoom } from "./ChatbotRoom";
 import { MessageInput } from "./MessageInput";
 import { MessageWindow } from "./MessageWindow";
@@ -13,6 +15,11 @@ import { SearchDrawer } from "./SearchDrawer";
 interface ChatRoomProps {
   roomId: string;
 }
+
+type SummaryState =
+  | { status: "loading" }
+  | { status: "done"; text: string }
+  | { status: "error"; message: string };
 
 export function ChatRoom({ roomId }: ChatRoomProps) {
   const {
@@ -30,6 +37,7 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<SummaryState | null>(null);
 
   const meta = roomMeta(roomId, clients, groups);
   if (!meta) return null;
@@ -56,6 +64,17 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
     }, 3000);
   };
 
+  async function summarize() {
+    setSummary({ status: "loading" });
+    try {
+      const result = await api.summarizeRoom(roomId);
+      setSummary((current) => current && { status: "done", text: result.summary });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Couldn't summarize this chat.";
+      setSummary((current) => current && { status: "error", message });
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-brown-100 bg-white/70 px-6 py-4">
@@ -74,6 +93,15 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
         </h2>
 
         <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={summarize}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-brown-500 transition hover:bg-brown-50 hover:text-brown-700"
+            aria-label="Summarize chat"
+            title="Summarize chat"
+          >
+            <Sparkles className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={() => setSearchOpen((prev) => !prev)}
@@ -137,6 +165,25 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
           onSelectMessage={handleSelectMessage}
         />
       </div>
+
+      <Modal open={summary !== null} onClose={() => setSummary(null)} title="Chat summary">
+        {summary?.status === "loading" && (
+          <p role="status" className="flex items-center gap-2 text-sm text-ink-soft">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Summarizing…
+          </p>
+        )}
+        {summary?.status === "error" && (
+          <p role="alert" className="text-sm font-medium text-red-500">
+            {summary.message}
+          </p>
+        )}
+        {summary?.status === "done" && (
+          <p className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm text-ink">
+            {summary.text}
+          </p>
+        )}
+      </Modal>
 
       {group && (
         <>

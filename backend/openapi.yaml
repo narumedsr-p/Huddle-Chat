@@ -20,6 +20,7 @@ tags:
   - name: clients
   - name: groups
   - name: rooms
+  - name: ai
   - name: realtime
 
 paths:
@@ -382,6 +383,54 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /rooms/{roomId}/summary:
+    post:
+      tags: [rooms]
+      operationId: summarizeRoom
+      summary: Summarize the latest 200 messages in a room
+      description: >
+        The summary goes only to the caller. It is not stored or sent to the room.
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Summarized
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary]
+                properties:
+                  summary:
+                    type: string
+        "400":
+          description: NOTHING_TO_SUMMARIZE | INVALID_ROOM_ID
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: NOT_A_PARTICIPANT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: CLIENT_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: AI_RATE_LIMITED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: AI_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /rooms/{roomId}/read:
     put:
       tags: [rooms]
@@ -396,6 +445,64 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: NOT_A_PARTICIPANT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /ai/speech-to-text:
+    post:
+      tags: [ai]
+      operationId: speechToText
+      summary: Transcribe a voice recording to text
+      description: >
+        Nothing is stored or sent to a room. Accepts webm, ogg, mp4, m4a, mp3,
+        wav and flac, up to 25 MB. `text` is empty when no speech was recognised.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Transcribed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+        "400":
+          description: EMPTY_AUDIO | INVALID_AUDIO
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: AUDIO_TOO_LARGE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "415":
+          description: UNSUPPORTED_AUDIO
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: AI_RATE_LIMITED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: AI_UNAVAILABLE
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

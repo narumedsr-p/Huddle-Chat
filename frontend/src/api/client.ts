@@ -29,7 +29,7 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
-  if (init.body) headers["Content-Type"] = "application/json";
+  if (init.body && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`/api/v1${path}`, { ...init, headers });

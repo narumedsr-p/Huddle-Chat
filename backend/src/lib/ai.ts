@@ -1,10 +1,15 @@
 import OpenAI, { toFile } from "openai";
 import { AppError } from "./errors";
 
-const client = new OpenAI({
-    apiKey: process.env.GROQ_API_KEY,
-    baseURL: "https://api.groq.com/openai/v1"
-})
+let client : OpenAI | undefined
+
+function getClient() {
+    client ??= new OpenAI({
+        apiKey: process.env.GROQ_API_KEY,
+        baseURL: "https://api.groq.com/openai/v1"
+    })
+    return client
+}
 
 // The provider's error (key, quota, ...) stays in the server log; callers only get a safe AppError.
 function toAIError(err : unknown) {
@@ -20,7 +25,7 @@ function toAIError(err : unknown) {
 export async function speechToText(file : File) {
 
     try {
-        const { text } = await client.audio.transcriptions.create({
+        const { text } = await getClient().audio.transcriptions.create({
             file,
             model: "whisper-large-v3",
             prompt: "Huddle Chat"
@@ -112,7 +117,7 @@ async function complete(
 
     let completion : OpenAI.Chat.ChatCompletion
     try {
-        completion = await client.chat.completions.create({
+        completion = await getClient().chat.completions.create({
             model: "openai/gpt-oss-120b",
             messages: [{ role: "system", content: system }, ...messages],
             tools,

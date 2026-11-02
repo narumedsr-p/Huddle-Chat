@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { aiRouter } from "./ai.routes";
 import { authRouter } from "./auth.routes";
 import { clientsRouter } from "./clients.routes";
 import { groupsRouter } from "./groups.routes";
@@ -14,3 +15,4 @@ apiRouter.use(groupsRouter);
 apiRouter.use(roomsRouter);
 apiRouter.use(chatbotRouter);
 apiRouter.use(searchRouter);
+apiRouter.use(aiRouter);
