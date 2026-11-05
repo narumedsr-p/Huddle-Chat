@@ -45,14 +45,20 @@ async function markRead(clientId: string, roomKey: string, lastReadAt: Date) {
 }
 
 async function main() {
+  // Wipe everything first so re-seeding always starts from a clean slate.
+  await prisma.message.deleteMany();
+  await prisma.readState.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.groupMember.deleteMany();
+  await prisma.group.deleteMany();
+  await prisma.client.deleteMany();
+
   const clientIdByName = new Map<string, string>();
   const passwordHash = await hashPassword(DEV_PASSWORD);
 
   for (const { name, online } of FEATURED) {
-    const client = await prisma.client.upsert({
-      where: { name },
-      update: { online, passwordHash },
-      create: { id: name === "Chatbot" ? "chatbot" : undefined, name, online, passwordHash },
+    const client = await prisma.client.create({
+      data: { id: name === "Chatbot" ? "chatbot" : undefined, name, online, passwordHash },
     });
     clientIdByName.set(name, client.id);
   }
@@ -60,19 +66,11 @@ async function main() {
   const groupIdByName = new Map<string, string>();
   for (const { name, createdBy, memberNames } of GROUPS) {
     const creatorId = clientIdByName.get(createdBy)!;
-    const group = await prisma.group.upsert({
-      where: { name },
-      update: {},
-      create: { name, createdBy: creatorId },
-    });
+    const group = await prisma.group.create({ data: { name, createdBy: creatorId } });
     groupIdByName.set(name, group.id);
     for (const memberName of memberNames) {
       const clientId = clientIdByName.get(memberName)!;
-      await prisma.groupMember.upsert({
-        where: { groupId_clientId: { groupId: group.id, clientId } },
-        update: {},
-        create: { groupId: group.id, clientId },
-      });
+      await prisma.groupMember.create({ data: { groupId: group.id, clientId } });
     }
   }
 
@@ -82,17 +80,6 @@ async function main() {
   const tarId = clientIdByName.get("Tar")!;
   const jungleDevsId = groupIdByName.get("Jungle Devs")!;
   const monkeyBusinessId = groupIdByName.get("Monkey Business")!;
-
-  // Clear out any messages from a previous seed run so re-seeding doesn't
-  // keep stacking more "unread" messages on top of the last run's.
-  await prisma.message.deleteMany({
-    where: {
-      OR: [
-        { groupId: { in: [jungleDevsId, monkeyBusinessId] } },
-        { senderId: tarId, recipientId: naraId },
-      ],
-    },
-  });
 
   // Jungle Devs: Tar floods the group so Nara ends up with 120 unread —
   // enough to exercise the "99+" badge cap.
