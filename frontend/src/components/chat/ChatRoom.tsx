@@ -47,9 +47,8 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   }
 
   const messages = messagesByRoom[roomId] ?? [];
-  const isTyping = !!typingRoomIds[roomId];
-  const typingName =
-    meta.kind === "private" ? meta.name : (meta.group?.name ?? "Someone");
+  const typingName = typingRoomIds[roomId] ?? null;
+  const isTyping = !!typingName;
   const group = meta.kind === "group" ? meta.group : undefined;
   const groupMembers = group
     ? group.memberIds

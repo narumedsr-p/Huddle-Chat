@@ -39,7 +39,8 @@ interface State {
   openRoomIds: string[];
   activeRoomId: string | null;
   messagesByRoom: Record<string, Message[]>;
-  typingRoomIds: Record<string, boolean>;
+  /** Name of whoever is currently typing in a room, or null if nobody is. */
+  typingRoomIds: Record<string, string | null>;
   unreadCounts: Record<string, number>;
   /** Unread count captured the moment a room was opened, for the "Unread messages" divider. */
   unreadDividers: Record<string, number>;
@@ -60,7 +61,7 @@ type Action =
   | { type: "SET_ACTIVE"; roomId: string }
   | { type: "MERGE_MESSAGES"; roomId: string; messages: Message[] }
   | { type: "REMOVE_MESSAGE"; roomId: string; id: string }
-  | { type: "SET_TYPING"; roomId: string; typing: boolean }
+  | { type: "SET_TYPING"; roomId: string; name: string | null }
   | { type: "SET_UNREAD"; unreadCounts: Record<string, number> }
   | { type: "PATCH_UNREAD"; roomId: string; count: number }
   | { type: "RESET" };
@@ -194,7 +195,7 @@ function reducer(state: State, action: Action): State {
     case "SET_TYPING":
       return {
         ...state,
-        typingRoomIds: { ...state.typingRoomIds, [action.roomId]: action.typing },
+        typingRoomIds: { ...state.typingRoomIds, [action.roomId]: action.name },
       };
     case "SET_UNREAD":
       return { ...state, unreadCounts: action.unreadCounts };
@@ -506,15 +507,19 @@ export function ChatStoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "PATCH_UNREAD", roomId, count });
       }),
       socket.on("typing", (payload) => {
-        const { roomId, typing } = payload as { roomId: string; typing: boolean };
-        dispatch({ type: "SET_TYPING", roomId, typing });
+        const { roomId, typing, name } = payload as {
+          roomId: string;
+          typing: boolean;
+          name: string;
+        };
+        dispatch({ type: "SET_TYPING", roomId, name: typing ? name : null });
 
         const pending = typingTimeouts.get(roomId);
         if (pending) clearTimeout(pending);
         if (typing) {
           typingTimeouts.set(
             roomId,
-            setTimeout(() => dispatch({ type: "SET_TYPING", roomId, typing: false }), TYPING_EXPIRY_MS),
+            setTimeout(() => dispatch({ type: "SET_TYPING", roomId, name: null }), TYPING_EXPIRY_MS),
           );
         } else {
           typingTimeouts.delete(roomId);
