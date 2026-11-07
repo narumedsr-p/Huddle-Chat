@@ -1,5 +1,5 @@
 import { LogOut } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useChatStore } from "../../state/useChatStore";
 import { MonkeyMascot } from "../MonkeyMascot";
 import { Avatar } from "../ui/Avatar";
@@ -14,12 +14,44 @@ interface SidebarProps {
   onModeChange: (mode: SidebarMode) => void;
 }
 
+const MIN_WIDTH = 240;
+const MAX_WIDTH = 480;
+
 export function Sidebar({ mode, onModeChange }: SidebarProps) {
   const { currentUser, logout } = useChatStore();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [width, setWidth] = useState(320);
+  const resizing = useRef(false);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    resizing.current = true;
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizing.current) return;
+      const next = startWidth + (ev.clientX - startX);
+      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
+    };
+    const onUp = () => {
+      resizing.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r border-brown-100 bg-white/60 backdrop-blur">
+    <aside
+      className="relative flex h-full shrink-0 flex-col border-r border-brown-100 bg-white/60 backdrop-blur"
+      style={{ width }}
+    >
+      <div
+        onMouseDown={startResize}
+        className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize hover:bg-brown-300/60"
+      />
       <div className="flex items-center gap-2.5 border-b border-brown-100 px-4 py-4">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold-300/50">
           <MonkeyMascot className="h-7 w-7" />
